@@ -1,56 +1,88 @@
-# Welcome to your Expo app 👋
+# Scented Roots 🌿
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A mobile app for cataloging, tracking, and sharing your fragrance collection — built as a personal project to learn full-stack mobile development with React Native and Firebase.
 
-## Get started
+<p align="center">
+  <img src="./screenshots/lm-login.jpg" width="200" alt="Login screen" />
+  <img src="./screenshots/feed.jpg" width="200" alt="Feed screen" />
+  <img src="./screenshots/fragrance-detail.jpg" width="200" alt="Fragrance detail screen" />
+</p>
+<p align="center">
+  <img src="./screenshots/add-fragrance.jpg" width="200" alt="Add fragrance screen" />
+  <img src="./screenshots/lm_post_details.jpg" width="200" alt="Post detail with comments" />
+</p>
 
-1. Install dependencies
+## Features
 
-   ```bash
-   npm install
-   ```
+- **Multi-user accounts** — email/password auth via Firebase Authentication
+- **Personal collection** — add fragrances manually or pull them from a shared catalog, with photos, notes, and full edit/delete support
+- **Searchable catalog** — seeded from a public Kaggle fragrance dataset (~10,000 entries), searchable by name, brand, or note
+- **Social feed** — post about a fragrance with multiple photos (swipeable carousel), caption, and description
+- **Comments & follows** — comment threads on posts, follow other collectors, and view follower/following counts on profiles
+- **Discover page** — browse other users' collections
+- **Light/dark theme** — persisted user preference (system, light, or dark)
+- **Polished UI details** — animated screen transitions, staggered list fade-ins, skeleton loading states, and tactile press feedback throughout
 
-2. Start the app
+## Tech Stack
 
-   ```bash
-   npx expo start
-   ```
+- **Frontend:** React Native, Expo Router
+- **Backend:** Firebase (Authentication, Firestore, Storage)
+- **Image hosting:** Cloudinary
+- **Data tooling:** Node.js script to import, deduplicate, and prune the catalog from the source dataset
 
-In the output, you'll find options to open the app in a
+## Project Structure
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/
+  app/                # Expo Router screens (index, login, profile, settings, etc.)
+    detail/[id].tsx    # Fragrance detail, edit, and delete
+  constants/           # Theme tokens, fonts
+  context/             # ThemeContext (light/dark/system, persisted via AsyncStorage)
+firebaseConfig.ts       # Firebase app initialization (db/auth/storage)
+fragrance-import/
+  import-fragrances.js  # Seeds/prunes the shared catalog from the Kaggle dataset
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Personal collection items and shared catalog entries live in the same Firestore `fragrances` collection, distinguished by field: catalog docs carry a `status` field and no `userId`; personal items carry a `userId` and no `status`.
 
-### Other setup steps
+## Getting Started
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+1. Clone the repo and install dependencies:
 
-## Learn more
+```bash
+   git clone https://github.com/MyLastCode/scented-roots.git
+   cd scented-roots
+   npm install
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+2. Create a `.env` file in the project root with your own Firebase and Cloudinary values:
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_key
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+   EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET=your_upload_preset
+```
 
-## Join the community
+(See `.env.example` for the same template with no real values.)
 
-Join our community of developers creating universal apps.
+3. Start the app:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+   npx expo start
+```
+
+## Data Source
+
+The fragrance catalog is seeded from the [Fragrantica Perfumes dataset](https://www.kaggle.com/datasets/ledecanteur/fragrantica-perfumes) on Kaggle, ranked by vote count and capped to stay within Firestore's free-tier quota.
+
+## Roadmap
+
+- Add Collection grid, catalog search, and dark-mode screenshots
+- Moderation queue for user-submitted catalog entries
+- Restrict the feed to followed users (optional)
+- Migrate catalog search to dedicated search infrastructure (e.g. Algolia/Typesense) to support the full dataset
