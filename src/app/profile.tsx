@@ -1,9 +1,9 @@
 import * as ImagePicker from "expo-image-picker";
+import { useNavigation, useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Button,
   Image,
   StyleSheet,
   Text,
@@ -14,12 +14,19 @@ import {
 import { auth, db } from "../../firebaseConfig";
 import { ThemeColors } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
+import { fetchCollection, getCachedCollection } from "../services/collectionCache";
 
 export default function ProfileScreen() {
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
-  const [photoURL, setPhotoURL] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  // Pre-fill the form from the Collection cache so it opens instantly.
+  const initial = getCachedCollection()?.profile;
+  const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
+  const [bio, setBio] = useState(initial?.bio ?? "");
+  const [photoURL, setPhotoURL] = useState<string | null>(
+    initial?.photoURL ?? null,
+  );
+  // Only show the spinner when there is nothing cached to pre-fill with.
+  const [loading, setLoading] = useState(!initial);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const CLOUDINARY_CLOUD_NAME =
@@ -29,12 +36,20 @@ export default function ProfileScreen() {
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
+  const navigation = useNavigation();
 
   const user = auth.currentUser;
 
   useEffect(() => {
+    // Cached data is already in the form; skip the fetch so we don't
+    // overwrite anything the user has started typing.
+    if (initial) return;
+
     const loadProfile = async () => {
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       const docRef = doc(db, "users", user.uid);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
@@ -90,18 +105,49 @@ export default function ProfileScreen() {
     if (!user) return;
     setSaving(true);
     try {
-      await setDoc(doc(db, "users", user.uid), {
-        displayName,
-        bio,
-        photoURL,
-        email: user.email,
-      });
+      await setDoc(
+        doc(db, "users", user.uid),
+        { displayName, bio, photoURL, email: user.email },
+        { merge: true },
+      );
+      // Refresh the cache so the Collection tab shows the new profile
+      // immediately when we go back.
+      await fetchCollection().catch(() => {});
+      router.back();
     } catch (error) {
       console.error("Error saving profile:", error);
     } finally {
       setSaving(false);
     }
   };
+
+  // Puts Save in the header instead of at the bottom of the form, so it's
+  // always reachable even when the keyboard is open. Re-registers whenever
+  // the editable fields or saving state change, since handleSave closes
+  // over them and a stale closure would save old values.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={saving}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          style={{ paddingRight: 4 }}
+        >
+          <Text
+            style={{
+              color: colors.accent,
+              fontWeight: "600",
+              fontSize: 16,
+              opacity: saving ? 0.5 : 1,
+            }}
+          >
+            {saving ? "Saving..." : "Save"}
+          </Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, displayName, bio, photoURL, saving, colors]);
 
   if (loading) {
     return (
@@ -146,15 +192,6 @@ export default function ProfileScreen() {
         placeholderTextColor={colors.tertiaryText}
         multiline
       />
-
-      <View style={styles.buttonWrapper}>
-        <Button
-          title={saving ? "Saving..." : "Save Profile"}
-          onPress={handleSave}
-          disabled={saving}
-          color={colors.accent}
-        />
-      </View>
     </View>
   );
 }
@@ -171,7 +208,7 @@ function createStyles(colors: ThemeColors) {
     avatar: { width: 100, height: 100, borderRadius: 50 },
     avatarPlaceholder: {
       width: 100,
-      height: 200,
+      height: 100,
       borderRadius: 50,
       backgroundColor: colors.placeholder,
       alignItems: "center",
@@ -196,6 +233,5 @@ function createStyles(colors: ThemeColors) {
       backgroundColor: colors.inputBackground,
     },
     multiline: { height: 80, textAlignVertical: "top" },
-    buttonWrapper: { marginTop: 24 },
   });
 }

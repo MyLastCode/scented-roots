@@ -11,6 +11,8 @@
     "ios": {
       "icon": "./assets/expo.icon",
       "bundleIdentifier": "com.mylastcode.fragranceapp",
+      "userInterfaceStyle": "automatic",
+      "backgroundColor": "#000000",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

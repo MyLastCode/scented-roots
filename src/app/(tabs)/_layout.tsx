@@ -8,20 +8,23 @@ export default function TabsLayout() {
   const { colors } = useTheme();
 
   return (
-    <Tabs
-      initialRouteName="feed"
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.card },
-        headerTintColor: colors.text,
-        headerRight: () => <SettingsButton />,
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopColor: colors.divider,
-        },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.tertiaryText,
-      }}
-    >
+   <Tabs
+  initialRouteName="feed"
+  screenOptions={{
+    lazy: false,
+    headerStyle: { backgroundColor: colors.card },
+    headerTintColor: colors.text,
+    headerRight: () => <SettingsButton />,
+    sceneStyle: { backgroundColor: colors.background },
+    tabBarStyle: {
+      backgroundColor: colors.card,
+      borderTopColor: colors.divider,
+    },
+    tabBarActiveTintColor: colors.accent,
+    tabBarInactiveTintColor: colors.tertiaryText,
+  }}
+>
+
       <Tabs.Screen
         name="discover"
         options={{

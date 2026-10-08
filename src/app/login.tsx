@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -15,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { auth } from "../../firebaseConfig";
+import { auth, db } from "../../firebaseConfig";
 import { fonts } from "../constants/fonts";
 import { ThemeColors } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
@@ -35,7 +36,14 @@ export default function LoginScreen() {
     setSubmitting(true);
     try {
       if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const cred = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password,
+        );
+        await setDoc(doc(db, "users", cred.user.uid), {
+          createdAt: new Date(),
+        });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }

@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { useCallback, useState } from "react";
 import { FlatList, Image, StyleSheet, Text, View } from "react-native";
-import { auth, db } from "../../../firebaseConfig";
+import { auth } from "../../../firebaseConfig";
 import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
 import { PhotoCarousel } from "../../components/PhotoCarousel";
@@ -11,20 +10,7 @@ import { SkeletonBlock } from "../../components/SkeletonBlock";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
-
-type Post = {
-  id: string;
-  userId: string;
-  displayName: string;
-  userPhotoURL: string | null;
-  caption: string;
-  description: string;
-  photoURLs: string[];
-  commentCount?: number;
-  createdAt: { toDate: () => Date } | null;
-};
-
-const PAGE_SIZE = 50;
+import { fetchFeed, getCachedPosts, Post } from "../../services/feedCache";
 
 function timeAgo(date: Date | null) {
   if (!date) return "";
@@ -83,23 +69,16 @@ function FeedSkeleton({ colors }: { colors: ThemeColors }) {
 
 export default function FeedScreen() {
   const router = useRouter();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<Post[]>(getCachedPosts() ?? []);
+  // Only show the skeleton when there is nothing cached to display yet.
+  const [loading, setLoading] = useState(!getCachedPosts());
 
   const { colors } = useTheme();
   const cardStyles = styles(colors);
 
   const loadPosts = useCallback(async () => {
-    setLoading(true);
     try {
-      const snapshot = await getDocs(
-        query(
-          collection(db, "posts"),
-          orderBy("createdAt", "desc"),
-          limit(PAGE_SIZE),
-        ),
-      );
-      setPosts(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Post[]);
+      setPosts(await fetchFeed());
     } catch (error) {
       console.error("Error loading feed:", error);
     } finally {

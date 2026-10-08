@@ -1,30 +1,34 @@
 import {
-  Inter_400Regular,
-  Inter_700Bold,
+  PlayfairDisplay_400Regular,
+  PlayfairDisplay_600SemiBold,
+  PlayfairDisplay_700Bold,
   useFonts,
-} from "@expo-google-fonts/inter";
+} from "@expo-google-fonts/playfair-display";
+import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { Text } from "react-native";
+import { TouchableOpacity } from "react-native";
 import { auth } from "../../firebaseConfig";
-import { SettingsButton } from "../components/SettingsButton";
-import { fonts } from "../constants/fonts";
+import { fetchFeed } from "../services/feedCache";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 SplashScreen.preventAutoHideAsync();
+function SettingsButton() {
+  const router = useRouter();
+  const { colors } = useTheme();
 
-// Makes Inter the default for every Text that doesn't explicitly set its own
-// fontFamily (headings still opt into fonts.serifSemiBold for bold).
-// @ts-ignore - defaultProps isn't in RN's official Text types
-Text.defaultProps = Text.defaultProps || {};
-// @ts-ignore
-Text.defaultProps.style = [
-  { fontFamily: fonts.regular },
-  // @ts-ignore
-  Text.defaultProps.style,
-];
+  return (
+    <TouchableOpacity
+      onPress={() => router.push("/settings")}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      style={{ paddingRight: 4 }}
+    >
+      <Ionicons name="settings-outline" size={22} color={colors.text} />
+    </TouchableOpacity>
+  );
+}
 
 function RootLayoutNav() {
   const [user, setUser] = useState<User | null>(null);
@@ -34,17 +38,16 @@ function RootLayoutNav() {
   const { theme, colors } = useTheme();
 
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_700Bold,
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_600SemiBold,
+    PlayfairDisplay_700Bold,
   });
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      if (initializing) setInitializing(false);
-    });
-    return unsubscribe;
-  }, []);
+  const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+  setUser(firebaseUser);
+  if (firebaseUser) fetchFeed().catch(() => {});
+  if (initializing) setInitializing(false);
+});
 
   useEffect(() => {
     if (initializing) return;
@@ -72,39 +75,32 @@ function RootLayoutNav() {
     <>
       <StatusBar style={theme === "dark" ? "light" : "dark"} />
       <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: colors.card },
-          headerTintColor: colors.text,
-          contentStyle: { backgroundColor: colors.background },
-          headerRight: () => <SettingsButton />,
-          animation: "fade",
-        }}
-      >
+  screenOptions={{
+    headerStyle: { backgroundColor: colors.card },
+    headerTintColor: colors.text,
+    contentStyle: { backgroundColor: colors.background },
+    headerRight: () => <SettingsButton />,
+    animation: "slide_from_right",
+  }}
+>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="login"
+          options={{ headerShown: false, animation: "fade" }}
+        />
         <Stack.Screen
           name="add-fragrance"
-          options={{ title: "Add Fragrance" }}
+          options={{ title: "Add Fragrance", animation: "slide_from_bottom" }}
         />
         <Stack.Screen
           name="catalog-search"
           options={{ title: "Search Catalog" }}
         />
         <Stack.Screen
-          name="add-from-catalog"
-          options={{ title: "Add Fragrance" }}
-        />
-        <Stack.Screen
           name="detail/[id]"
           options={{ title: "Fragrance Detail" }}
         />
-        <Stack.Screen name="user/[id]" options={{ title: "Collector" }} />
-        <Stack.Screen name="post/[id]" options={{ title: "Post" }} />
-        <Stack.Screen name="profile" options={{ title: "Edit Profile" }} />
-        <Stack.Screen
-          name="new-post"
-          options={{ title: "New Post", animation: "slide_from_bottom" }}
-        />
+        <Stack.Screen name="profile" options={{ title: "My Profile" }} />
         <Stack.Screen
           name="settings"
           options={{ title: "Settings", headerRight: () => null }}
