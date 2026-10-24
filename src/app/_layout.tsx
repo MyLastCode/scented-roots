@@ -50,16 +50,21 @@ function RootLayoutNav() {
 });
 
   useEffect(() => {
-    if (initializing) return;
+  if (initializing) return;
 
-    const inAuthGroup = segments[0] === "login";
+  const first: string = segments[0];
+  const onLogin = first === "login";
+  const onVerify = first === "verify-email";
+  const onLegal = first === "legal";
 
-    if (!user && !inAuthGroup) {
-      router.replace("/login");
-    } else if (user && inAuthGroup) {
-      router.replace("/feed");
-    }
-  }, [user, initializing, segments]);
+  if (!user) {
+    if (!onLogin && !onLegal) router.replace("/login");
+  } else if (!user.emailVerified) {
+    if (!onVerify && !onLegal) router.replace("../verify-email");
+  } else if (onLogin || onVerify) {
+    router.replace("/feed");
+  }
+}, [user, initializing, segments]);
 
   const isReady = !initializing && fontsLoaded;
 
@@ -105,6 +110,8 @@ function RootLayoutNav() {
           name="settings"
           options={{ title: "Settings", headerRight: () => null }}
         />
+        <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+        <Stack.Screen name="legal" options={{ title: "Legal", headerRight: () => null }} /> 
       </Stack>
     </>
   );

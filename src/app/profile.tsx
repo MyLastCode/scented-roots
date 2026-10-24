@@ -106,10 +106,10 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       await setDoc(
-        doc(db, "users", user.uid),
-        { displayName, bio, photoURL, email: user.email },
-        { merge: true },
-      );
+      doc(db, "users", user.uid),
+      { displayName, bio, photoURL },
+      { merge: true },
+    );
       // Refresh the cache so the Collection tab shows the new profile
       // immediately when we go back.
       await fetchCollection().catch(() => {});

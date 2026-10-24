@@ -1,15 +1,15 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   createUserWithEmailAndPassword,
+  sendEmailVerification,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
+  Button,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
-import { fonts } from "../constants/fonts";
+import { TERMS_VERSION } from "../constants/legal";
 import { ThemeColors } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
 
@@ -26,28 +26,51 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
 
+  const openLegal = (docName: "terms" | "privacy") => {
+    router.push({ pathname: "../legal", params: { doc: docName } });
+  };
+
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (isSignUp && !agreed) {
+      Alert.alert(
+        "Agreement required",
+        "Please agree to the Terms of Service and Privacy Policy to create an account.",
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (isSignUp) {
-        const cred = await createUserWithEmailAndPassword(
+        const credential = await createUserWithEmailAndPassword(
           auth,
-          email,
+          email.trim(),
           password,
         );
-        await setDoc(doc(db, "users", cred.user.uid), {
-          createdAt: new Date(),
-        });
+
+        // Record what was accepted and when. merge: true so this never
+        // overwrites profile fields saved on the same doc.
+        await setDoc(
+          doc(db, "users", credential.user.uid),
+          {
+            termsAcceptedAt: serverTimestamp(),
+            termsVersion: TERMS_VERSION,
+          },
+          { merge: true },
+        );
+
+        await sendEmailVerification(credential.user);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, email.trim(), password);
       }
-      router.replace("/feed");
+      // No navigation here. The root layout's auth listener sends the person
+      // to /verify-email or the feed depending on emailVerified.
     } catch (error: any) {
       Alert.alert("Error", error.message);
     } finally {
@@ -56,148 +79,108 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.mark}>✦</Text>
-          <Text style={styles.title}>Scented Roots</Text>
-          <Text style={styles.subtitle}>
-            {isSignUp
-              ? "Start cataloguing your collection"
-              : "Welcome back to your collection"}
-          </Text>
-        </View>
+    <View style={styles.container}>
+      <Text style={styles.title}>{isSignUp ? "Create Account" : "Log In"}</Text>
 
-        <View style={styles.form}>
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="you@email.com"
-              placeholderTextColor={colors.tertiaryText}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-            />
-          </View>
+      <TextInput
+        style={styles.input}
+        placeholder="Email"
+        placeholderTextColor={colors.tertiaryText}
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Password"
+        placeholderTextColor={colors.tertiaryText}
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+      />
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={colors.tertiaryText}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
+      {isSignUp && (
+        <View style={styles.consentRow}>
           <TouchableOpacity
-            style={[
-              styles.submitButton,
-              submitting && styles.submitButtonDisabled,
-            ]}
-            onPress={handleSubmit}
-            disabled={submitting}
-            activeOpacity={0.85}
+            onPress={() => setAgreed(!agreed)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: agreed }}
           >
-            {submitting ? (
-              <ActivityIndicator color={colors.background} />
-            ) : (
-              <Text style={styles.submitButtonText}>
-                {isSignUp ? "Create Account" : "Log In"}
-              </Text>
-            )}
+            <Ionicons
+              name={agreed ? "checkbox" : "square-outline"}
+              size={24}
+              color={agreed ? colors.accent : colors.tertiaryText}
+            />
           </TouchableOpacity>
-
-          <Text style={styles.toggle} onPress={() => setIsSignUp(!isSignUp)}>
-            {isSignUp
-              ? "Already have an account? Log in"
-              : "Don't have an account? Sign up"}
+          <Text style={styles.consentText}>
+            I agree to the{" "}
+            <Text style={styles.link} onPress={() => openLegal("terms")}>
+              Terms of Service
+            </Text>{" "}
+            and{" "}
+            <Text style={styles.link} onPress={() => openLegal("privacy")}>
+              Privacy Policy
+            </Text>
+            .
           </Text>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      )}
+
+      <Button
+        title={isSignUp ? "Sign Up" : "Log In"}
+        onPress={handleSubmit}
+        disabled={submitting || (isSignUp && !agreed)}
+        color={colors.accent}
+      />
+
+      <Text style={styles.toggle} onPress={() => setIsSignUp(!isSignUp)}>
+        {isSignUp
+          ? "Already have an account? Log in"
+          : "Don't have an account? Sign up"}
+      </Text>
+    </View>
   );
 }
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
-    flex: { flex: 1, backgroundColor: colors.background },
     container: {
       flex: 1,
-      justifyContent: "center",
-      paddingHorizontal: 32,
+      padding: 20,
+      paddingTop: 100,
       backgroundColor: colors.background,
     },
-    header: {
-      alignItems: "center",
-      marginBottom: 44,
-    },
-    mark: {
-      fontSize: 20,
-      color: colors.accent,
-      marginBottom: 10,
-    },
     title: {
-      fontFamily: fonts.serifSemiBold,
-      fontSize: 32,
+      fontSize: 26,
+      fontWeight: "bold",
+      marginBottom: 24,
       color: colors.text,
-      letterSpacing: 0.2,
-    },
-    subtitle: {
-      fontSize: 14,
-      color: colors.secondaryText,
-      marginTop: 8,
-      textAlign: "center",
-    },
-    form: {
-      width: "100%",
-      maxWidth: 360,
-      alignSelf: "center",
-    },
-    fieldGroup: {
-      marginBottom: 22,
-    },
-    fieldLabel: {
-      fontSize: 12,
-      color: colors.tertiaryText,
-      marginBottom: 6,
     },
     input: {
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      paddingVertical: 10,
-      fontSize: 17,
-      color: colors.text,
-    },
-    submitButton: {
-      backgroundColor: colors.accent,
-      borderRadius: 999,
-      paddingVertical: 15,
-      alignItems: "center",
-      justifyContent: "center",
-      marginTop: 14,
-    },
-    submitButtonDisabled: {
-      opacity: 0.7,
-    },
-    submitButtonText: {
-      color: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: 12,
       fontSize: 16,
-      fontWeight: "600",
+      marginBottom: 12,
+      color: colors.text,
+      backgroundColor: colors.inputBackground,
     },
-    toggle: {
-      marginTop: 22,
-      color: colors.accent,
-      textAlign: "center",
+    consentRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 16,
+    },
+    consentText: {
+      flex: 1,
       fontSize: 14,
+      lineHeight: 20,
+      color: colors.secondaryText,
     },
+    link: { color: colors.accent, fontWeight: "600" },
+    toggle: { marginTop: 20, color: colors.accent, textAlign: "center" },
   });
 }
