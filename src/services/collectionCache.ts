@@ -13,6 +13,8 @@ export type Fragrance = {
   name: string;
   brand: string;
   notes: string;
+  // Catalog accords (e.g. "woody", "vanilla"); only set when added from the catalog.
+  accords?: string[];
   photoURL?: string | null;
 };
 

@@ -18,35 +18,18 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
 import { AnimatedPressable } from "../components/AnimatedPressable";
+import TextField from "../components/ui/TextField";
 import { ThemeColors } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
-
-const CLOUDINARY_CLOUD_NAME = "qkpbnofd";
-const CLOUDINARY_UPLOAD_PRESET = "fragrance_app_unsigned";
+import { uploadImage } from "../lib/cloudinary";
 
 // Instagram-style cap so a post stays quick to scroll through.
 const MAX_PHOTOS = 8;
-
-async function uploadImageAsync(uri: string): Promise<string> {
-  const imageResponse = await fetch(uri);
-  const blob = await imageResponse.blob();
-  const formData = new FormData();
-  formData.append("file", blob, "post.jpg");
-  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
-  const uploadResponse = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-    { method: "POST", body: formData },
-  );
-  const data = await uploadResponse.json();
-  return data.secure_url;
-}
 
 export default function NewPostScreen() {
   const router = useRouter();
@@ -90,7 +73,7 @@ export default function NewPostScreen() {
   const handlePickImages = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alert("Permission to access photos is needed.");
+      Alert.alert("Permission needed", "Allow photo access to add pictures.");
       return;
     }
 
@@ -105,11 +88,12 @@ export default function NewPostScreen() {
     setUploading(true);
     try {
       const uploaded = await Promise.all(
-        result.assets.map((asset) => uploadImageAsync(asset.uri)),
+        result.assets.map((asset) => uploadImage(asset.uri, "post.jpg")),
       );
       setPhotos((prev) => [...prev, ...uploaded].slice(0, MAX_PHOTOS));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading images:", error);
+      Alert.alert("Upload failed", error.message);
     } finally {
       setUploading(false);
     }
@@ -171,6 +155,7 @@ export default function NewPostScreen() {
       playSuccessAndGoBack();
     } catch (error) {
       console.error("Error saving post:", error);
+      Alert.alert("Couldn't save post", "Please try again.");
     } finally {
       setPosting(false);
     }
@@ -211,54 +196,71 @@ export default function NewPostScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container}>
-        <Text style={styles.label}>Photos</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {photos.map((url) => (
-            <View key={url} style={styles.thumbWrapper}>
-              <Image source={{ uri: url }} style={styles.thumb} />
+      <ScrollView
+        style={styles.container}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ gap: 16, paddingBottom: 40 }}
+      >
+        <View>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Photos</Text>
+            <Text style={styles.counter}>
+              {photos.length} of {MAX_PHOTOS}
+            </Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 10, overflow: "visible" }}
+          >
+            {photos.map((url) => (
+              <View key={url} style={styles.thumbWrapper}>
+                <Image source={{ uri: url }} style={styles.thumb} />
+                <TouchableOpacity
+                  style={styles.removeBadge}
+                  onPress={() => removePhoto(url)}
+                >
+                  <Ionicons name="close" size={14} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {photos.length < MAX_PHOTOS && (
               <TouchableOpacity
-                style={styles.removeBadge}
-                onPress={() => removePhoto(url)}
+                onPress={handlePickImages}
+                style={styles.addThumb}
+                disabled={uploading}
               >
-                <Ionicons name="close" size={14} color="#fff" />
+                {uploading ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Ionicons
+                    name="add"
+                    size={28}
+                    color={colors.placeholderText}
+                  />
+                )}
               </TouchableOpacity>
-            </View>
-          ))}
+            )}
+          </ScrollView>
+        </View>
 
-          {photos.length < MAX_PHOTOS && (
-            <TouchableOpacity
-              onPress={handlePickImages}
-              style={styles.addThumb}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : (
-                <Ionicons name="add" size={28} color={colors.tertiaryText} />
-              )}
-            </TouchableOpacity>
-          )}
-        </ScrollView>
-
-        <Text style={styles.label}>Caption</Text>
-        <TextInput
-          style={[styles.input, styles.multiline]}
+        <TextField
+          label="Caption *"
           value={caption}
           onChangeText={setCaption}
           placeholder="What are you wearing today?"
-          placeholderTextColor={colors.tertiaryText}
           multiline
+          style={{ minHeight: 70 }}
         />
 
-        <Text style={styles.label}>Description (optional)</Text>
-        <TextInput
-          style={[styles.input, styles.multiline]}
+        <TextField
+          label="Description (optional)"
           value={description}
           onChangeText={setDescription}
-          placeholder="Add more detail if you'd like — notes, occasion, longevity..."
-          placeholderTextColor={colors.tertiaryText}
+          placeholder="Add more detail if you'd like: notes, occasion, longevity..."
           multiline
+          style={{ minHeight: 100 }}
         />
 
         <View style={styles.buttonWrapper}>
@@ -271,7 +273,7 @@ export default function NewPostScreen() {
             disabled={posting || deleting || !caption.trim()}
           >
             {posting ? (
-              <ActivityIndicator color={colors.background} />
+              <ActivityIndicator color={colors.onAccent} />
             ) : (
               <Text style={styles.postButtonText}>
                 {isEditing ? "Save Changes" : "Post"}
@@ -306,7 +308,7 @@ export default function NewPostScreen() {
               { transform: [{ scale: successScale }] },
             ]}
           >
-            <Ionicons name="checkmark" size={36} color={colors.background} />
+            <Ionicons name="checkmark" size={36} color={colors.onAccent} />
           </Animated.View>
         </Animated.View>
       )}
@@ -323,18 +325,18 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
       backgroundColor: colors.background,
     },
-    label: {
-      fontSize: 16,
-      fontWeight: "600",
-      marginTop: 16,
-      marginBottom: 8,
-      color: colors.text,
+    labelRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
     },
-    thumbWrapper: { marginRight: 10 },
-    thumb: { width: 90, height: 90, borderRadius: 10 },
+    label: { fontSize: 15, fontWeight: "600", color: colors.text },
+    counter: { fontSize: 13, color: colors.tertiaryText },
+    thumbWrapper: { marginRight: 10, paddingTop: 6 },
+    thumb: { width: 96, height: 96, borderRadius: 12 },
     removeBadge: {
       position: "absolute",
-      top: -6,
+      top: 0,
       right: -6,
       backgroundColor: "rgba(0,0,0,0.6)",
       borderRadius: 10,
@@ -344,41 +346,32 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
     },
     addThumb: {
-      width: 90,
-      height: 90,
-      borderRadius: 10,
+      width: 96,
+      height: 96,
+      marginTop: 6,
+      borderRadius: 12,
       backgroundColor: colors.placeholder,
       alignItems: "center",
       justifyContent: "center",
     },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      padding: 10,
-      fontSize: 16,
-      color: colors.text,
-      backgroundColor: colors.inputBackground,
-    },
-    multiline: { height: 70, textAlignVertical: "top" },
-    buttonWrapper: { marginTop: 24, marginBottom: 40 },
+    buttonWrapper: { marginTop: 8 },
     postButton: {
       backgroundColor: colors.accent,
-      borderRadius: 24,
-      paddingVertical: 14,
+      borderRadius: 28,
+      paddingVertical: 15,
       alignItems: "center",
     },
     postButtonDisabled: { opacity: 0.5 },
     postButtonText: {
-      color: colors.background,
+      color: colors.onAccent,
       fontSize: 16,
       fontWeight: "600",
     },
-    deleteButtonWrapper: { marginTop: 16, marginBottom: 40 },
+    deleteButtonWrapper: { marginBottom: 40 },
     deleteButton: {
       borderWidth: 1,
       borderColor: colors.error,
-      borderRadius: 24,
+      borderRadius: 28,
       paddingVertical: 14,
       alignItems: "center",
     },

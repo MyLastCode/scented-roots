@@ -1,42 +1,41 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import { addDoc, collection } from "firebase/firestore";
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Button,
+  Alert,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
-import { ThemeColors } from "../constants/theme";
+import Button from "../components/ui/Button";
+import TextField from "../components/ui/TextField";
+import { radii } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
-
-const CLOUDINARY_CLOUD_NAME =
-  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
-const CLOUDINARY_UPLOAD_PRESET =
-  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "";
+import { uploadImage } from "../lib/cloudinary";
 
 export default function AddFragranceScreen() {
   const router = useRouter();
+  const { colors } = useTheme();
+
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
   const [notes, setNotes] = useState("");
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const [saving, setSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alert("Permission to access photos is needed.");
+      Alert.alert("Permission needed", "Allow photo access to add a picture.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -49,167 +48,118 @@ export default function AddFragranceScreen() {
 
     setUploading(true);
     try {
-      const imageResponse = await fetch(result.assets[0].uri);
-      const blob = await imageResponse.blob();
-      const formData = new FormData();
-      formData.append("file", blob, "fragrance.jpg");
-      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
-      const uploadResponse = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        { method: "POST", body: formData },
-      );
-      const data = await uploadResponse.json();
-      setPhotoURL(data.secure_url);
-    } catch (error) {
-      console.error("Error uploading image:", error);
+      setPhotoURL(await uploadImage(result.assets[0].uri, "fragrance.jpg"));
+    } catch (error: any) {
+      Alert.alert("Upload failed", error.message);
     } finally {
       setUploading(false);
     }
   };
 
   const handleSave = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setNameError("Give your fragrance a name.");
+      return;
+    }
     const user = auth.currentUser;
     if (!user) return;
 
+    setSaving(true);
     try {
       await addDoc(collection(db, "fragrances"), {
-        name,
-        brand,
-        notes,
+        name: name.trim(),
+        brand: brand.trim(),
+        notes: notes.trim(),
         photoURL: photoURL || null,
         createdAt: new Date(),
         userId: user.uid,
       });
       router.back();
-    } catch (error) {
-      console.error("Error saving fragrance:", error);
+    } catch (error: any) {
+      Alert.alert("Couldn't save fragrance", error.message);
+      setSaving(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <TouchableOpacity
-        style={styles.searchCatalogButton}
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Button
+        title="Search Existing Fragrances"
+        variant="soft"
         onPress={() => router.push("/catalog-search")}
-      >
-        <Text style={styles.searchCatalogButtonText}>
-          🔍 Search Existing Fragrances
-        </Text>
-      </TouchableOpacity>
+        icon={<Ionicons name="search" size={18} color={colors.accent} />}
+      />
 
       <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
-        <Text style={styles.dividerText}>or add manually</Text>
-        <View style={styles.dividerLine} />
+        <View style={[styles.line, { backgroundColor: colors.divider }]} />
+        <Text style={{ color: colors.tertiaryText, fontSize: 13 }}>or add manually</Text>
+        <View style={[styles.line, { backgroundColor: colors.divider }]} />
       </View>
 
-      <TouchableOpacity onPress={handlePickImage} style={styles.imageWrapper}>
+      <Pressable
+        onPress={handlePickImage}
+        style={[styles.photo, { backgroundColor: colors.placeholder }]}
+      >
         {uploading ? (
           <ActivityIndicator size="large" color={colors.accent} />
         ) : photoURL ? (
-          <Image source={{ uri: photoURL }} style={styles.image} />
+          <Image source={{ uri: photoURL }} style={styles.photoImage} />
         ) : (
-          <View style={styles.imagePlaceholder}>
-            <Text style={styles.imagePlaceholderText}>Add Photo</Text>
-          </View>
+          <>
+            <Ionicons name="camera-outline" size={26} color={colors.placeholderText} />
+            <Text style={{ color: colors.placeholderText, fontSize: 12 }}>Add Photo</Text>
+          </>
         )}
-      </TouchableOpacity>
+      </Pressable>
 
-      <Text style={styles.label}>Fragrance Name</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Fragrance Name"
         value={name}
-        onChangeText={setName}
+        onChangeText={(t) => {
+          setName(t);
+          if (nameError) setNameError(null);
+        }}
         placeholder="e.g. Sauvage"
-        placeholderTextColor={colors.tertiaryText}
+        error={nameError}
       />
-
-      <Text style={styles.label}>Brand</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Brand"
         value={brand}
         onChangeText={setBrand}
         placeholder="e.g. Dior"
-        placeholderTextColor={colors.tertiaryText}
       />
-
-      <Text style={styles.label}>Notes</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
+      <TextField
+        label="Notes"
         value={notes}
         onChangeText={setNotes}
         placeholder="e.g. Bergamot, pepper, ambroxan"
-        placeholderTextColor={colors.tertiaryText}
         multiline
       />
 
-      <View style={styles.buttonWrapper}>
-        <Button
-          title="Save Fragrance"
-          onPress={handleSave}
-          color={colors.accent}
-        />
+      <View style={{ marginTop: 8, marginBottom: 24 }}>
+        <Button title="Save Fragrance" onPress={handleSave} loading={saving} />
       </View>
     </ScrollView>
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: { flex: 1, padding: 20, backgroundColor: colors.background },
-    searchCatalogButton: {
-      backgroundColor: colors.accentBackground,
-      borderRadius: 8,
-      paddingVertical: 14,
-      alignItems: "center",
-      marginTop: 4,
-    },
-    searchCatalogButtonText: {
-      color: colors.accent,
-      fontWeight: "600",
-      fontSize: 16,
-    },
-    dividerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginVertical: 20,
-    },
-    dividerLine: { flex: 1, height: 1, backgroundColor: colors.divider },
-    dividerText: {
-      marginHorizontal: 10,
-      color: colors.tertiaryText,
-      fontSize: 13,
-    },
-    imageWrapper: { alignSelf: "center", marginVertical: 10 },
-    image: { width: 120, height: 120, borderRadius: 12 },
-    imagePlaceholder: {
-      width: 120,
-      height: 120,
-      borderRadius: 12,
-      backgroundColor: colors.placeholder,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    imagePlaceholderText: { color: colors.placeholderText, fontSize: 12 },
-    label: {
-      fontSize: 16,
-      fontWeight: "600",
-      marginTop: 16,
-      marginBottom: 6,
-      color: colors.text,
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      padding: 10,
-      fontSize: 16,
-      color: colors.text,
-      backgroundColor: colors.inputBackground,
-    },
-    multiline: { height: 80, textAlignVertical: "top" },
-    buttonWrapper: { marginTop: 24, marginBottom: 40 },
-  });
-}
+const styles = StyleSheet.create({
+  content: { padding: 20, gap: 16 },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  line: { flex: 1, height: 1 },
+  photo: {
+    width: 120,
+    height: 120,
+    borderRadius: radii.xl,
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    overflow: "hidden",
+  },
+  photoImage: { width: "100%", height: "100%" },
+});

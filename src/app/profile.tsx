@@ -1,59 +1,42 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { useNavigation, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  Alert,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
-import { ThemeColors } from "../constants/theme";
+import Avatar from "../components/ui/Avatar";
+import Button from "../components/ui/Button";
+import TextField from "../components/ui/TextField";
 import { useTheme } from "../context/ThemeContext";
-import { fetchCollection, getCachedCollection } from "../services/collectionCache";
+import { uploadImage } from "../lib/cloudinary";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  // Pre-fill the form from the Collection cache so it opens instantly.
-  const initial = getCachedCollection()?.profile;
-  const [displayName, setDisplayName] = useState(initial?.displayName ?? "");
-  const [bio, setBio] = useState(initial?.bio ?? "");
-  const [photoURL, setPhotoURL] = useState<string | null>(
-    initial?.photoURL ?? null,
-  );
-  // Only show the spinner when there is nothing cached to pre-fill with.
-  const [loading, setLoading] = useState(!initial);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const CLOUDINARY_CLOUD_NAME =
-    process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
-  const CLOUDINARY_UPLOAD_PRESET =
-    process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "";
-
   const { colors } = useTheme();
-  const styles = createStyles(colors);
-  const navigation = useNavigation();
-
   const user = auth.currentUser;
 
-  useEffect(() => {
-    // Cached data is already in the form; skip the fetch so we don't
-    // overwrite anything the user has started typing.
-    if (initial) return;
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [photoURL, setPhotoURL] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
+  useEffect(() => {
     const loadProfile = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      const docRef = doc(db, "users", user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+      if (!user) return;
+      const snap = await getDoc(doc(db, "users", user.uid));
+      if (snap.exists()) {
+        const data = snap.data();
         setDisplayName(data.displayName || "");
         setBio(data.bio || "");
         setPhotoURL(data.photoURL || null);
@@ -66,7 +49,10 @@ export default function ProfileScreen() {
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alert("Permission to access photos is needed to set a profile picture.");
+      Alert.alert(
+        "Permission needed",
+        "Allow photo access to set a profile picture.",
+      );
       return;
     }
 
@@ -76,26 +62,13 @@ export default function ProfileScreen() {
       aspect: [1, 1],
       quality: 0.7,
     });
-
     if (result.canceled) return;
 
     setUploading(true);
     try {
-      const imageResponse = await fetch(result.assets[0].uri);
-      const blob = await imageResponse.blob();
-
-      const formData = new FormData();
-      formData.append("file", blob, "profile.jpg");
-      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
-      const uploadResponse = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        { method: "POST", body: formData },
-      );
-      const data = await uploadResponse.json();
-      setPhotoURL(data.secure_url);
-    } catch (error) {
-      console.error("Error uploading image:", error);
+      setPhotoURL(await uploadImage(result.assets[0].uri, "profile.jpg"));
+    } catch (error: any) {
+      Alert.alert("Upload failed", error.message);
     } finally {
       setUploading(false);
     }
@@ -105,133 +78,111 @@ export default function ProfileScreen() {
     if (!user) return;
     setSaving(true);
     try {
+      // merge: true keeps fields written elsewhere (termsAcceptedAt, follower
+      // counts, etc.) instead of wiping them on every save.
       await setDoc(
-      doc(db, "users", user.uid),
-      { displayName, bio, photoURL },
-      { merge: true },
-    );
-      // Refresh the cache so the Collection tab shows the new profile
-      // immediately when we go back.
-      await fetchCollection().catch(() => {});
+        doc(db, "users", user.uid),
+        { displayName: displayName.trim(), bio: bio.trim(), photoURL, email: user.email },
+        { merge: true },
+      );
       router.back();
-    } catch (error) {
-      console.error("Error saving profile:", error);
+    } catch (error: any) {
+      Alert.alert("Couldn't save profile", error.message);
     } finally {
       setSaving(false);
     }
   };
 
-  // Puts Save in the header instead of at the bottom of the form, so it's
-  // always reachable even when the keyboard is open. Re-registers whenever
-  // the editable fields or saving state change, since handleSave closes
-  // over them and a stale closure would save old values.
-  useEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <TouchableOpacity
-          onPress={handleSave}
-          disabled={saving}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={{ paddingRight: 4 }}
-        >
-          <Text
-            style={{
-              color: colors.accent,
-              fontWeight: "600",
-              fontSize: 16,
-              opacity: saving ? 0.5 : 1,
-            }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </Text>
-        </TouchableOpacity>
-      ),
-    });
-  }, [navigation, displayName, bio, photoURL, saving, colors]);
-
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={handlePickImage} style={styles.avatarWrapper}>
-        {uploading ? (
-          <ActivityIndicator size="large" color={colors.accent} />
-        ) : photoURL ? (
-          <Image source={{ uri: photoURL }} style={styles.avatar} />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarPlaceholderText}>Add Photo</Text>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.avatarWrap}>
+        <Pressable onPress={handlePickImage}>
+          {uploading ? (
+            <View
+              style={[
+                styles.uploading,
+                { backgroundColor: colors.placeholder },
+              ]}
+            >
+              <ActivityIndicator color={colors.accent} />
+            </View>
+          ) : (
+            <Avatar name={displayName || user?.email} photoURL={photoURL} size={100} />
+          )}
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: colors.accent, borderColor: colors.background },
+            ]}
+          >
+            <Ionicons name="camera" size={16} color={colors.onAccent} />
           </View>
-        )}
-      </TouchableOpacity>
+        </Pressable>
+        <Text style={[styles.change, { color: colors.accent }]} onPress={handlePickImage}>
+          Change photo
+        </Text>
+      </View>
 
-      <Text style={styles.label}>Email</Text>
-      <Text style={styles.readOnly}>{user?.email}</Text>
+      <View style={{ gap: 6 }}>
+        <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+        <Text style={{ fontSize: 16, color: colors.secondaryText }}>{user?.email}</Text>
+      </View>
 
-      <Text style={styles.label}>Display Name</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Display Name"
         value={displayName}
         onChangeText={setDisplayName}
         placeholder="e.g. Tyler"
-        placeholderTextColor={colors.tertiaryText}
       />
-
-      <Text style={styles.label}>Bio</Text>
-      <TextInput
-        style={[styles.input, styles.multiline]}
+      <TextField
+        label="Bio"
         value={bio}
         onChangeText={setBio}
         placeholder="A short line about your collection or taste"
-        placeholderTextColor={colors.tertiaryText}
         multiline
       />
-    </View>
+
+      <View style={{ marginTop: 8 }}>
+        <Button title="Save Profile" onPress={handleSave} loading={saving} />
+      </View>
+    </ScrollView>
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 20,
-      paddingTop: 60,
-      backgroundColor: colors.background,
-    },
-    avatarWrapper: { alignSelf: "center", marginBottom: 20 },
-    avatar: { width: 100, height: 100, borderRadius: 50 },
-    avatarPlaceholder: {
-      width: 100,
-      height: 100,
-      borderRadius: 50,
-      backgroundColor: colors.placeholder,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarPlaceholderText: { color: colors.placeholderText, fontSize: 12 },
-    label: {
-      fontSize: 16,
-      fontWeight: "600",
-      marginTop: 16,
-      marginBottom: 6,
-      color: colors.text,
-    },
-    readOnly: { fontSize: 16, color: colors.secondaryText },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      padding: 10,
-      fontSize: 16,
-      color: colors.text,
-      backgroundColor: colors.inputBackground,
-    },
-    multiline: { height: 80, textAlignVertical: "top" },
-  });
-}
+const styles = StyleSheet.create({
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  content: { padding: 20, paddingTop: 24, gap: 16 },
+  avatarWrap: { alignItems: "center", gap: 10 },
+  uploading: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  change: { fontSize: 14, fontWeight: "500" },
+  label: { fontSize: 15, fontWeight: "600" },
+});

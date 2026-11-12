@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useNavigation } from "expo-router";
 import {
   collection,
   doc,
@@ -24,6 +24,7 @@ import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
 import { ProfileStats } from "../../components/ProfileStats";
 import { SkeletonBlock } from "../../components/SkeletonBlock";
+import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
@@ -51,6 +52,7 @@ const GRID_ITEM_SIZE =
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const navigation = useNavigation();
   const [fragrances, setFragrances] = useState<Fragrance[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,6 +116,13 @@ export default function UserProfileScreen() {
     loadData();
   }, [id]);
 
+  // Show the collector's name in the header once it's loaded.
+  useEffect(() => {
+    if (profile?.displayName) {
+      navigation.setOptions({ title: profile.displayName });
+    }
+  }, [profile?.displayName]);
+
   if (loading) {
     return (
       <View style={styles.listContent}>
@@ -160,17 +169,11 @@ export default function UserProfileScreen() {
       ListHeaderComponent={
         <View>
           <View style={styles.profileRow}>
-            {profile?.photoURL ? (
-              <Image source={{ uri: profile.photoURL }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons
-                  name="person-outline"
-                  size={32}
-                  color={colors.tertiaryText}
-                />
-              </View>
-            )}
+            <Avatar
+              name={profile?.displayName}
+              photoURL={profile?.photoURL}
+              size={80}
+            />
             <View style={styles.profileStats}>
               <Text style={styles.displayName} numberOfLines={1}>
                 {profile?.displayName}
@@ -201,7 +204,7 @@ export default function UserProfileScreen() {
             {busy ? (
               <ActivityIndicator
                 size="small"
-                color={isFollowing ? colors.text : colors.background}
+                color={isFollowing ? colors.text : colors.onAccent}
               />
             ) : (
               <Text
@@ -216,6 +219,11 @@ export default function UserProfileScreen() {
           </AnimatedPressable>
 
           <View style={styles.gridDivider} />
+        </View>
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>No fragrances in this collection yet.</Text>
         </View>
       }
       renderItem={({ item, index }) => (
@@ -243,27 +251,11 @@ export default function UserProfileScreen() {
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    centered: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: colors.background,
-    },
-    listContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
+    listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
     profileRow: {
       flexDirection: "row",
       alignItems: "center",
       marginBottom: 16,
-    },
-    avatar: { width: 80, height: 80, borderRadius: 40 },
-    avatarPlaceholder: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      borderWidth: 1,
-      borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
     },
     profileStats: { marginLeft: 16, flex: 1 },
     displayName: {
@@ -280,8 +272,8 @@ function createStyles(colors: ThemeColors) {
     },
     followButton: {
       backgroundColor: colors.accent,
-      borderRadius: 24,
-      paddingVertical: 12,
+      borderRadius: 28,
+      paddingVertical: 13,
       alignItems: "center",
       marginBottom: 20,
     },
@@ -291,7 +283,7 @@ function createStyles(colors: ThemeColors) {
       borderColor: colors.border,
     },
     followButtonText: {
-      color: colors.background,
+      color: colors.onAccent,
       fontSize: 15,
       fontWeight: "600",
     },
@@ -299,18 +291,20 @@ function createStyles(colors: ThemeColors) {
     gridDivider: {
       height: 1,
       backgroundColor: colors.divider,
-      marginBottom: GRID_GAP,
+      marginBottom: GRID_GAP + 4,
     },
+    emptyState: { alignItems: "center", paddingTop: 24 },
+    emptyText: { fontSize: 14, color: colors.tertiaryText },
     gridItem: { width: GRID_ITEM_SIZE },
     gridImage: {
       width: GRID_ITEM_SIZE,
       height: GRID_ITEM_SIZE,
-      borderRadius: 8,
+      borderRadius: 12,
     },
     gridImagePlaceholder: {
       width: GRID_ITEM_SIZE,
       height: GRID_ITEM_SIZE,
-      borderRadius: 8,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.divider,
       alignItems: "center",
@@ -319,7 +313,7 @@ function createStyles(colors: ThemeColors) {
     gridName: {
       fontSize: 11,
       color: colors.secondaryText,
-      marginTop: 4,
+      marginTop: 6,
       textAlign: "center",
     },
   });

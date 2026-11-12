@@ -8,24 +8,25 @@ import {
   increment,
   orderBy,
   query,
-  writeBatch
+  writeBatch,
 } from "firebase/firestore";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { auth, db } from "../../../firebaseConfig";
 import { FadeInItem } from "../../components/FadeInItem";
 import { PhotoCarousel } from "../../components/PhotoCarousel";
+import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
@@ -37,6 +38,7 @@ type Post = {
   caption: string;
   description: string;
   photoURLs: string[];
+  createdAt?: { toDate: () => Date } | null;
 };
 
 type Comment = {
@@ -144,6 +146,7 @@ export default function PostDetailScreen() {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {
       console.error("Error adding comment:", error);
+      Alert.alert("Couldn't post comment", "Please try again.");
     } finally {
       setSending(false);
     }
@@ -157,6 +160,8 @@ export default function PostDetailScreen() {
     );
   }
 
+  const canSend = commentText.trim().length > 0 && !sending;
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -169,25 +174,24 @@ export default function PostDetailScreen() {
         contentContainerStyle={styles.listContent}
         data={comments}
         keyExtractor={(item) => item.id}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           post ? (
             <View style={styles.postBlock}>
               <View style={styles.postHeader}>
-                {post.userPhotoURL ? (
-                  <Image
-                    source={{ uri: post.userPhotoURL }}
-                    style={styles.avatar}
-                  />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons
-                      name="person-outline"
-                      size={16}
-                      color={colors.tertiaryText}
-                    />
-                  </View>
-                )}
-                <Text style={styles.displayName}>{post.displayName}</Text>
+                <Avatar
+                  name={post.displayName}
+                  photoURL={post.userPhotoURL}
+                  size={36}
+                />
+                <View style={{ marginLeft: 10 }}>
+                  <Text style={styles.displayName}>{post.displayName}</Text>
+                  {post.createdAt?.toDate ? (
+                    <Text style={styles.postTime}>
+                      {timeAgo(post.createdAt.toDate())}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
 
               <PhotoCarousel photos={post.photoURLs || []} colors={colors} />
@@ -200,36 +204,39 @@ export default function PostDetailScreen() {
               <View style={styles.divider} />
               <Text style={styles.commentsHeading}>
                 {comments.length === 0
-                  ? "No comments yet"
-                  : `${comments.length} comment${comments.length === 1 ? "" : "s"}`}
+                  ? "Comments"
+                  : `Comments · ${comments.length}`}
               </Text>
+              {comments.length === 0 ? (
+                <View style={styles.emptyComments}>
+                  <Ionicons
+                    name="chatbubble-outline"
+                    size={22}
+                    color={colors.tertiaryText}
+                  />
+                  <Text style={styles.emptyCommentsText}>
+                    No comments yet. Start the conversation.
+                  </Text>
+                </View>
+              ) : null}
             </View>
-          ) : null
+          ) : undefined
         }
         renderItem={({ item, index }) => (
           <FadeInItem index={index} style={styles.commentRow}>
-            {item.userPhotoURL ? (
-              <Image
-                source={{ uri: item.userPhotoURL }}
-                style={styles.commentAvatar}
-              />
-            ) : (
-              <View style={styles.commentAvatarPlaceholder}>
-                <Ionicons
-                  name="person-outline"
-                  size={12}
-                  color={colors.tertiaryText}
-                />
-              </View>
-            )}
+            <Avatar
+              name={item.displayName}
+              photoURL={item.userPhotoURL}
+              size={32}
+            />
             <View style={styles.commentBody}>
-              <Text style={styles.commentText}>
-                <Text style={styles.commentAuthor}>{item.displayName} </Text>
-                {item.text}
-              </Text>
-              <Text style={styles.commentTime}>
-                {timeAgo(item.createdAt?.toDate?.() ?? null)}
-              </Text>
+              <View style={styles.commentHead}>
+                <Text style={styles.commentAuthor}>{item.displayName}</Text>
+                <Text style={styles.commentTime}>
+                  {timeAgo(item.createdAt?.toDate?.() ?? null)}
+                </Text>
+              </View>
+              <Text style={styles.commentText}>{item.text}</Text>
             </View>
           </FadeInItem>
         )}
@@ -244,20 +251,24 @@ export default function PostDetailScreen() {
           placeholderTextColor={colors.tertiaryText}
           multiline
         />
-        <TouchableOpacity
+        <Pressable
           onPress={handleSend}
-          disabled={sending || !commentText.trim()}
+          disabled={!canSend}
+          style={[
+            styles.sendButton,
+            { backgroundColor: canSend ? colors.accent : colors.placeholder },
+          ]}
         >
           {sending ? (
-            <ActivityIndicator size="small" color={colors.accent} />
+            <ActivityIndicator size="small" color={colors.onAccent} />
           ) : (
             <Ionicons
-              name="arrow-up-circle"
-              size={32}
-              color={commentText.trim() ? colors.accent : colors.tertiaryText}
+              name="send"
+              size={17}
+              color={canSend ? colors.onAccent : colors.placeholderText}
             />
           )}
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </KeyboardAvoidingView>
   );
@@ -273,77 +284,64 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
       backgroundColor: colors.background,
     },
-    listContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
+    listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
     postBlock: { marginBottom: 12 },
     postHeader: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 10,
+      marginBottom: 12,
     },
-    avatar: { width: 32, height: 32, borderRadius: 16 },
-    avatarPlaceholder: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    displayName: {
-      marginLeft: 10,
-      fontSize: 14,
-      fontWeight: "600",
-      color: colors.text,
-    },
+    displayName: { fontSize: 14, fontWeight: "600", color: colors.text },
+    postTime: { fontSize: 12, color: colors.tertiaryText, marginTop: 1 },
     caption: {
       fontFamily: fonts.serifSemiBold,
       fontSize: 16,
       color: colors.text,
       lineHeight: 22,
+      marginTop: 14,
     },
     description: {
       fontSize: 14,
       color: colors.secondaryText,
       lineHeight: 20,
-      marginTop: 6,
+      marginTop: 4,
     },
     divider: {
       height: 1,
       backgroundColor: colors.divider,
-      marginTop: 16,
-      marginBottom: 12,
-    },
-    commentsHeading: {
-      fontSize: 13,
-      fontWeight: "600",
-      color: colors.tertiaryText,
-    },
-    commentRow: {
-      flexDirection: "row",
+      marginTop: 18,
       marginBottom: 14,
     },
-    commentAvatar: { width: 26, height: 26, borderRadius: 13 },
-    commentAvatarPlaceholder: {
-      width: 26,
-      height: 26,
-      borderRadius: 13,
-      borderWidth: 1,
-      borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
+    commentsHeading: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: colors.text,
     },
-    commentBody: { marginLeft: 10, flex: 1 },
-    commentText: { fontSize: 14, color: colors.text, lineHeight: 19 },
-    commentAuthor: { fontWeight: "600" },
-    commentTime: { fontSize: 11, color: colors.tertiaryText, marginTop: 2 },
+    emptyComments: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 12,
+    },
+    emptyCommentsText: { fontSize: 14, color: colors.tertiaryText },
+    commentRow: {
+      flexDirection: "row",
+      marginBottom: 16,
+    },
+    commentBody: { marginLeft: 10, flex: 1, gap: 2 },
+    commentHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+    commentAuthor: { fontSize: 13, fontWeight: "600", color: colors.text },
+    commentTime: { fontSize: 12, color: colors.tertiaryText },
+    commentText: { fontSize: 14, color: colors.text, lineHeight: 20 },
     inputRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 20,
-      paddingVertical: 10,
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      paddingBottom: Platform.OS === "ios" ? 24 : 10,
       borderTopWidth: 1,
       borderTopColor: colors.divider,
+      backgroundColor: colors.card,
       gap: 10,
     },
     input: {
@@ -352,11 +350,18 @@ function createStyles(colors: ThemeColors) {
       borderColor: colors.border,
       borderRadius: 20,
       paddingHorizontal: 14,
-      paddingVertical: 8,
+      paddingVertical: 9,
       fontSize: 14,
       color: colors.text,
       backgroundColor: colors.inputBackground,
       maxHeight: 100,
+    },
+    sendButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      alignItems: "center",
+      justifyContent: "center",
     },
   });
 }

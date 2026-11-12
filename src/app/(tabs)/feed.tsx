@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { FlatList, Image, StyleSheet, Text, View } from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { auth } from "../../../firebaseConfig";
 import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
 import { PhotoCarousel } from "../../components/PhotoCarousel";
 import { SkeletonBlock } from "../../components/SkeletonBlock";
+import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
@@ -37,29 +38,32 @@ function FeedSkeleton({ colors }: { colors: ThemeColors }) {
             }}
           >
             <SkeletonBlock
-              width={32}
-              height={32}
-              borderRadius={16}
+              width={36}
+              height={36}
+              borderRadius={18}
               colors={colors}
             />
-            <SkeletonBlock
-              width={100}
-              height={13}
-              colors={colors}
-              style={{ marginLeft: 10 }}
-            />
+            <View style={{ marginLeft: 10 }}>
+              <SkeletonBlock width={100} height={13} colors={colors} />
+              <SkeletonBlock
+                width={56}
+                height={10}
+                colors={colors}
+                style={{ marginTop: 6 }}
+              />
+            </View>
           </View>
           <SkeletonBlock
             width="100%"
-            height={280}
-            borderRadius={10}
+            height={300}
+            borderRadius={14}
             colors={colors}
           />
           <SkeletonBlock
             width="60%"
             height={16}
             colors={colors}
-            style={{ marginTop: 12 }}
+            style={{ marginTop: 14 }}
           />
         </View>
       ))}
@@ -104,11 +108,9 @@ export default function FeedScreen() {
       keyExtractor={(item) => item.id}
       ListEmptyComponent={
         <View style={cardStyles.emptyState}>
-          <Ionicons
-            name="newspaper-outline"
-            size={40}
-            color={colors.tertiaryText}
-          />
+          <View style={cardStyles.emptyIcon}>
+            <Ionicons name="newspaper-outline" size={36} color={colors.accent} />
+          </View>
           <Text style={cardStyles.emptyTitle}>No posts yet</Text>
           <Text style={cardStyles.emptyText}>
             Be the first to post about a fragrance using the + button above.
@@ -125,20 +127,7 @@ export default function FeedScreen() {
             }}
             scaleTo={0.98}
           >
-            {item.userPhotoURL ? (
-              <Image
-                source={{ uri: item.userPhotoURL }}
-                style={cardStyles.avatar}
-              />
-            ) : (
-              <View style={cardStyles.avatarPlaceholder}>
-                <Ionicons
-                  name="person-outline"
-                  size={16}
-                  color={colors.tertiaryText}
-                />
-              </View>
-            )}
+            <Avatar name={item.displayName} photoURL={item.userPhotoURL} size={36} />
             <View style={cardStyles.postHeaderText}>
               <Text style={cardStyles.displayName}>{item.displayName}</Text>
               <Text style={cardStyles.timeAgo}>
@@ -149,27 +138,21 @@ export default function FeedScreen() {
 
           <PhotoCarousel photos={item.photoURLs || []} colors={colors} />
 
+          <AnimatedPressable
+            style={cardStyles.actionsRow}
+            onPress={() => router.push(`/post/${item.id}`)}
+            scaleTo={0.97}
+          >
+            <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+            <Text style={cardStyles.actionText}>
+              {item.commentCount ? String(item.commentCount) : "Add a comment"}
+            </Text>
+          </AnimatedPressable>
+
           <Text style={cardStyles.caption}>{item.caption}</Text>
           {item.description ? (
             <Text style={cardStyles.description}>{item.description}</Text>
           ) : null}
-
-          <AnimatedPressable
-            style={cardStyles.commentsRow}
-            onPress={() => router.push(`/post/${item.id}`)}
-            scaleTo={0.97}
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={15}
-              color={colors.tertiaryText}
-            />
-            <Text style={cardStyles.commentsText}>
-              {item.commentCount
-                ? `${item.commentCount} comment${item.commentCount === 1 ? "" : "s"}`
-                : "Add a comment"}
-            </Text>
-          </AnimatedPressable>
         </FadeInItem>
       )}
     />
@@ -179,31 +162,26 @@ export default function FeedScreen() {
 function styles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    listContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
+    listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
     card: {
-      marginBottom: 24,
-      paddingBottom: 20,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.divider,
+      marginBottom: 28,
     },
     postHeader: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 10,
-    },
-    avatar: { width: 32, height: 32, borderRadius: 16 },
-    avatarPlaceholder: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
+      marginBottom: 12,
     },
     postHeaderText: { marginLeft: 10 },
     displayName: { fontSize: 14, fontWeight: "600", color: colors.text },
     timeAgo: { fontSize: 12, color: colors.tertiaryText, marginTop: 1 },
+    actionsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 12,
+      marginBottom: 8,
+    },
+    actionText: { fontSize: 14, fontWeight: "500", color: colors.text },
     caption: {
       fontFamily: fonts.serifSemiBold,
       fontSize: 16,
@@ -214,20 +192,21 @@ function styles(colors: ThemeColors) {
       fontSize: 14,
       color: colors.secondaryText,
       lineHeight: 20,
-      marginTop: 6,
+      marginTop: 4,
     },
-    commentsRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      marginTop: 12,
-      gap: 6,
-    },
-    commentsText: { fontSize: 13, color: colors.tertiaryText },
     emptyState: {
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 32,
       paddingTop: 60,
+    },
+    emptyIcon: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.accentBackground,
+      alignItems: "center",
+      justifyContent: "center",
     },
     emptyTitle: {
       fontFamily: fonts.serifSemiBold,

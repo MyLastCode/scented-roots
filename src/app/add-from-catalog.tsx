@@ -1,44 +1,71 @@
+import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { addDoc, collection } from "firebase/firestore";
-import { useState } from "react";
+import { addDoc, collection, doc, getDoc } from "firebase/firestore";
+import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Button,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { auth, db } from "../../firebaseConfig";
-import { ThemeColors } from "../constants/theme";
+import Button from "../components/ui/Button";
+import Chip from "../components/ui/Chip";
+import { radii } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
+import { uploadImage } from "../lib/cloudinary";
 
-const CLOUDINARY_CLOUD_NAME = "qkpbnofd";
-const CLOUDINARY_UPLOAD_PRESET = "fragrance_app_unsigned";
+type CatalogFragrance = {
+  name: string;
+  brand: string;
+  year: number | null;
+  notesTop: string[];
+  notesMiddle: string[];
+  notesBase: string[];
+  accords: string[];
+};
 
 export default function AddFromCatalogScreen() {
   const router = useRouter();
-  const { catalogId, name, brand, notes } = useLocalSearchParams<{
-    catalogId: string;
-    name: string;
-    brand: string;
-    notes: string;
-  }>();
+  const { colors } = useTheme();
+  const { id } = useLocalSearchParams<{ id: string }>();
 
+  const [fragrance, setFragrance] = useState<CatalogFragrance | null>(null);
+  const [loading, setLoading] = useState(true);
   const [photoURL, setPhotoURL] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  useEffect(() => {
+    const load = async () => {
+      if (!id) return;
+      const snap = await getDoc(doc(db, "fragrances", id));
+      if (snap.exists()) {
+        const d = snap.data();
+        setFragrance({
+          name: d.name || "",
+          brand: d.brand || "",
+          year: d.year ?? null,
+          notesTop: d.notesTop || [],
+          notesMiddle: d.notesMiddle || [],
+          notesBase: d.notesBase || [],
+          accords: d.accords || [],
+        });
+      }
+      setLoading(false);
+    };
+    load();
+  }, [id]);
 
-  const handlePickImage = async () => {
+  const handlePickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      alert("Permission to access photos is needed.");
+      Alert.alert("Permission needed", "Allow photo access to add your own picture.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -51,119 +78,144 @@ export default function AddFromCatalogScreen() {
 
     setUploading(true);
     try {
-      const imageResponse = await fetch(result.assets[0].uri);
-      const blob = await imageResponse.blob();
-      const formData = new FormData();
-      formData.append("file", blob, "fragrance.jpg");
-      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
-      const uploadResponse = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        { method: "POST", body: formData },
-      );
-      const data = await uploadResponse.json();
-      setPhotoURL(data.secure_url);
-    } catch (error) {
-      console.error("Error uploading image:", error);
+      setPhotoURL(await uploadImage(result.assets[0].uri, "fragrance.jpg"));
+    } catch (e: any) {
+      Alert.alert("Upload failed", e.message);
     } finally {
       setUploading(false);
     }
   };
 
-  const handleAdd = async () => {
+  const handleAdd = async (withPhoto: boolean) => {
     const user = auth.currentUser;
-    if (!user || saving) return;
+    if (!user || !fragrance || !id) return;
 
     setSaving(true);
     try {
       await addDoc(collection(db, "fragrances"), {
-        name,
-        brand,
-        notes,
-        photoURL: photoURL || null,
+        name: fragrance.name,
+        brand: fragrance.brand,
+        notes: [...fragrance.notesTop, ...fragrance.notesMiddle, ...fragrance.notesBase].join(", "),
+        accords: fragrance.accords,
+        photoURL: withPhoto ? photoURL : null,
         createdAt: new Date(),
         userId: user.uid,
-        // Keeps a link back to the catalog entry this came from, in case
-        // future screens want to show extra catalog detail (rating, accords,
-        // Fragrantica link, etc.) without duplicating everything here.
-        catalogFragranceId: catalogId,
+        catalogFragranceId: id,
       });
+      router.dismissAll();
       router.replace("/");
-    } catch (error) {
-      console.error("Error adding fragrance:", error);
+    } catch (e: any) {
+      Alert.alert("Couldn't add fragrance", e.message);
       setSaving(false);
     }
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
+  }
+
+  if (!fragrance) {
+    return (
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.secondaryText }}>This fragrance couldn&apos;t be found.</Text>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container}>
-      <TouchableOpacity onPress={handlePickImage} style={styles.imageWrapper}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={styles.content}
+    >
+      <View
+        style={[styles.card, { backgroundColor: colors.card, borderColor: colors.divider }]}
+      >
+        <Text style={[styles.name, { color: colors.text }]}>{fragrance.name}</Text>
+        <Text style={[styles.brand, { color: colors.secondaryText }]}>
+          {fragrance.brand}
+          {fragrance.year ? ` · ${fragrance.year}` : ""}
+        </Text>
+        {fragrance.accords.length > 0 ? (
+          <View style={styles.chips}>
+            {fragrance.accords.slice(0, 4).map((a) => (
+              <Chip key={a} label={a} />
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.labelRow}>
+        <Text style={[styles.label, { color: colors.text }]}>Your photo</Text>
+        <Text style={{ fontSize: 13, color: colors.tertiaryText }}>Optional</Text>
+      </View>
+
+      <Pressable
+        onPress={handlePickPhoto}
+        style={[styles.picker, { backgroundColor: colors.placeholder }]}
+      >
         {uploading ? (
           <ActivityIndicator size="large" color={colors.accent} />
         ) : photoURL ? (
-          <Image source={{ uri: photoURL }} style={styles.image} />
+          <Image source={{ uri: photoURL }} style={styles.pickerImage} />
         ) : (
-          <View style={styles.imagePlaceholder}>
-            <Text style={styles.imagePlaceholderText}>Add Your Photo</Text>
-          </View>
+          <>
+            <Ionicons name="camera-outline" size={34} color={colors.placeholderText} />
+            <Text style={[styles.pickerTitle, { color: colors.placeholderText }]}>
+              Add a photo of your bottle
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.placeholderText }}>
+              Shows on your collection grid
+            </Text>
+          </>
         )}
-      </TouchableOpacity>
+      </Pressable>
 
-      <Text style={styles.name}>{name}</Text>
-      <Text style={styles.brand}>{brand}</Text>
-      {notes ? <Text style={styles.notes}>{notes}</Text> : null}
-
-      <View style={styles.buttonWrapper}>
-        <Button
-          title={saving ? "Adding..." : "Add to My Collection"}
-          onPress={handleAdd}
-          disabled={saving || uploading}
-          color={colors.accent}
-        />
-      </View>
+      <Button
+        title="Add to Collection"
+        onPress={() => handleAdd(true)}
+        loading={saving}
+        disabled={uploading}
+      />
+      {!photoURL ? null : (
+        <Text
+          style={[styles.link, { color: colors.secondaryText }]}
+          onPress={() => setPhotoURL(null)}
+        >
+          Remove photo
+        </Text>
+      )}
+      <Text
+        style={[styles.link, { color: colors.accent, fontWeight: "500" }]}
+        onPress={() => handleAdd(false)}
+      >
+        Add without a photo
+      </Text>
     </ScrollView>
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: { flex: 1, padding: 20, backgroundColor: colors.background },
-    imageWrapper: { alignSelf: "center", marginVertical: 10 },
-    image: { width: 140, height: 140, borderRadius: 14 },
-    imagePlaceholder: {
-      width: 140,
-      height: 140,
-      borderRadius: 14,
-      backgroundColor: colors.placeholder,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    imagePlaceholderText: {
-      color: colors.placeholderText,
-      fontSize: 12,
-      textAlign: "center",
-      paddingHorizontal: 10,
-    },
-    name: {
-      fontSize: 22,
-      fontWeight: "700",
-      color: colors.text,
-      textAlign: "center",
-      marginTop: 16,
-    },
-    brand: {
-      fontSize: 16,
-      color: colors.secondaryText,
-      textAlign: "center",
-      marginTop: 4,
-    },
-    notes: {
-      fontSize: 14,
-      color: colors.tertiaryText,
-      textAlign: "center",
-      marginTop: 10,
-      lineHeight: 20,
-    },
-    buttonWrapper: { marginTop: 28, marginBottom: 40 },
-  });
-}
+const styles = StyleSheet.create({
+  centered: { flex: 1, alignItems: "center", justifyContent: "center" },
+  content: { padding: 20, gap: 16 },
+  card: { padding: 16, gap: 8, borderRadius: radii.xl, borderWidth: 1 },
+  name: { fontSize: 24, fontWeight: "700" },
+  brand: { fontSize: 14 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 },
+  labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  label: { fontSize: 16, fontWeight: "600" },
+  picker: {
+    height: 230,
+    borderRadius: radii.xl,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    overflow: "hidden",
+  },
+  pickerImage: { width: "100%", height: "100%" },
+  pickerTitle: { fontSize: 15, fontWeight: "600" },
+  link: { textAlign: "center", fontSize: 14 },
+});

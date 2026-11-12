@@ -1,0 +1,22 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="104" height="104" viewBox="0 0 104 104" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Logo">
+<rect width="104" height="104" rx="26" fill="url(#paint0_linear_0_4)"/>
+<circle id="Ellipse" cx="52" cy="52" r="46.8" fill="white" fill-opacity="0.16"/>
+<ellipse id="Ellipse_2" cx="52" cy="87.36" rx="26" ry="2.6" fill="black" fill-opacity="0.22"/>
+<g id="Rectangle">
+<rect x="31.2" y="35.36" width="41.6" height="52" rx="5.824" fill="white" fill-opacity="0.3"/>
+<rect x="31.8" y="35.96" width="40.4" height="50.8" rx="5.224" stroke-width="1.2" stroke="white" stroke-opacity="0.75"/>
+</g>
+<rect id="Rectangle_2" x="33.696" y="50.96" width="36.608" height="34.32" rx="4.16" fill="#C46A1E" fill-opacity="0.92"/>
+<rect id="Rectangle_3" x="37.024" y="40.56" width="2.496" height="36.4" rx="1.248" fill="white" fill-opacity="0.55"/>
+<rect id="Rectangle_4" x="45.76" y="30.16" width="12.48" height="5.2" rx="1" fill="#1A1411"/>
+<rect id="Rectangle_5" x="42.432" y="19.76" width="19.136" height="10.4" rx="2.08" fill="#1A1411"/>
+<rect id="Rectangle_6" x="42.432" y="28.08" width="19.136" height="1.5" fill="#D9B26B"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_4" x1="52" y1="0" x2="52" y2="104" gradientUnits="userSpaceOnUse">
+<stop stop-color="#5A2A14"/>
+<stop offset="1" stop-color="#E8A15C"/>
+</linearGradient>
+</defs>
+</svg>

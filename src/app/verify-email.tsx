@@ -1,181 +1,136 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { sendEmailVerification, signOut } from "firebase/auth";
-import { useCallback, useEffect, useState } from "react";
-import {
-  Alert,
-  AppState,
-  Button,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { reload, sendEmailVerification, signOut } from "firebase/auth";
+import { useEffect, useState } from "react";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { auth } from "../../firebaseConfig";
-import { ThemeColors } from "../constants/theme";
+import Button from "../components/ui/Button";
 import { useTheme } from "../context/ThemeContext";
 
-const RESEND_COOLDOWN_SECONDS = 60;
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
-  const [checking, setChecking] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-
   const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const [checking, setChecking] = useState(false);
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_SECONDS);
 
-  const user = auth.currentUser;
-
-  // Re-reads the user from Firebase, because emailVerified does not update on
-  // its own after the person taps the link in their inbox.
-  const checkVerified = useCallback(
-    async (silent: boolean) => {
-      const current = auth.currentUser;
-      if (!current) return;
-
-      setChecking(true);
-      try {
-        await current.reload();
-        if (current.emailVerified) {
-          // Refresh the ID token so security rules that check
-          // email_verified see the new value.
-          await current.getIdToken(true);
-          router.replace("/feed");
-        } else if (!silent) {
-          Alert.alert(
-            "Not verified yet",
-            "Open the link in the email we sent you, then come back and try again.",
-          );
-        }
-      } catch (error: any) {
-        if (!silent) Alert.alert("Error", error.message);
-      } finally {
-        setChecking(false);
-      }
-    },
-    [router],
-  );
-
-  // Check automatically when the person returns to the app from their mail app.
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") checkVerified(true);
-    });
-    return () => subscription.remove();
-  }, [checkVerified]);
+  const email = auth.currentUser?.email ?? "your email";
 
   useEffect(() => {
     if (cooldown <= 0) return;
-    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000);
+    const timer = setTimeout(() => setCooldown((c) => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
 
-  const handleResend = async () => {
+  const handleVerified = async () => {
+    const user = auth.currentUser;
     if (!user) return;
-    setSending(true);
+    setChecking(true);
+    try {
+      // onAuthStateChanged doesn't fire when emailVerified flips, so refresh
+      // the user manually and navigate ourselves.
+      await reload(user);
+      if (auth.currentUser?.emailVerified) {
+        router.replace("/feed");
+      } else {
+        Alert.alert(
+          "Not verified yet",
+          "Open the link in the email we sent, then try again.",
+        );
+      }
+    } catch (e: any) {
+      Alert.alert("Something went wrong", e.message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleResend = async () => {
+    const user = auth.currentUser;
+    if (!user || cooldown > 0) return;
     try {
       await sendEmailVerification(user);
       setCooldown(RESEND_COOLDOWN_SECONDS);
-      Alert.alert("Email sent", `We sent a new link to ${user.email}.`);
-    } catch (error: any) {
-      if (error.code === "auth/too-many-requests") {
-        Alert.alert(
-          "Too many requests",
-          "Please wait a few minutes before asking for another email.",
-        );
-      } else {
-        Alert.alert("Error", error.message);
-      }
-    } finally {
-      setSending(false);
+      Alert.alert("Email sent", "Check your inbox (and spam folder).");
+    } catch (e: any) {
+      Alert.alert("Couldn't send email", e.message);
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      // The root layout's auth listener redirects to /login.
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
-  };
+  const formatCooldown = `0:${String(cooldown).padStart(2, "0")}`;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Verify your email</Text>
-      <Text style={styles.body}>
-        We sent a verification link to{" "}
-        <Text style={styles.email}>{user?.email}</Text>. Open it, then come
-        back here. Check your spam folder if you don't see it.
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.iconCircle,
+          { backgroundColor: colors.accentBackground },
+        ]}
+      >
+        <Ionicons name="mail-outline" size={48} color={colors.accent} />
+      </View>
+
+      <Text style={[styles.title, { color: colors.text }]}>
+        Verify your email
+      </Text>
+      <Text style={[styles.body, { color: colors.secondaryText }]}>
+        We sent a verification link to {email}. Open it, then come back here to
+        continue.
       </Text>
 
-      <View style={styles.buttonWrapper}>
+      <View style={styles.buttonWrap}>
         <Button
-          title={checking ? "Checking..." : "I've verified my email"}
-          onPress={() => checkVerified(false)}
-          disabled={checking}
-          color={colors.accent}
+          title="I've verified my email"
+          onPress={handleVerified}
+          loading={checking}
         />
       </View>
 
-      <TouchableOpacity
-        style={styles.secondaryButton}
+      <Text
+        style={[
+          styles.resend,
+          { color: cooldown > 0 ? colors.tertiaryText : colors.accent },
+        ]}
         onPress={handleResend}
-        disabled={sending || cooldown > 0}
       >
-        <Text
-          style={[
-            styles.secondaryButtonText,
-            (sending || cooldown > 0) && styles.disabledText,
-          ]}
-        >
-          {cooldown > 0 ? `Resend email (${cooldown}s)` : "Resend email"}
+        Resend email
+      </Text>
+      {cooldown > 0 ? (
+        <Text style={[styles.hint, { color: colors.tertiaryText }]}>
+          You can request another link in {formatCooldown}
         </Text>
-      </TouchableOpacity>
+      ) : null}
 
-      <Text style={styles.toggle} onPress={handleLogout}>
+      <Text
+        style={[styles.switch, { color: colors.secondaryText }]}
+        onPress={() => signOut(auth)}
+      >
         Use a different account
       </Text>
     </View>
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 20,
-      paddingTop: 100,
-      backgroundColor: colors.background,
-    },
-    title: {
-      fontSize: 26,
-      fontWeight: "bold",
-      marginBottom: 16,
-      color: colors.text,
-    },
-    body: {
-      fontSize: 16,
-      lineHeight: 24,
-      color: colors.secondaryText,
-      marginBottom: 28,
-    },
-    email: { color: colors.text, fontWeight: "600" },
-    buttonWrapper: { marginBottom: 12 },
-    secondaryButton: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingVertical: 12,
-      alignItems: "center",
-    },
-    secondaryButtonText: {
-      color: colors.text,
-      fontSize: 16,
-      fontWeight: "600",
-    },
-    disabledText: { color: colors.tertiaryText },
-    toggle: { marginTop: 24, color: colors.accent, textAlign: "center" },
-  });
-}
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    gap: 16,
+  },
+  iconCircle: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: { fontSize: 26, fontWeight: "700", textAlign: "center" },
+  body: { fontSize: 15, lineHeight: 22, textAlign: "center" },
+  buttonWrap: { alignSelf: "stretch", marginTop: 8 },
+  resend: { fontSize: 15, fontWeight: "600" },
+  hint: { fontSize: 13, marginTop: -8 },
+  switch: { fontSize: 14, marginTop: 8 },
+});

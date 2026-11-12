@@ -1,8 +1,6 @@
 import { useRouter } from "expo-router";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";  
-import { Pressable } from "react-native";
 import {
   ActivityIndicator,
   FlatList,

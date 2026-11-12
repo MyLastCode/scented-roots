@@ -2,11 +2,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { collection, getDocs, limit, query, where } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Image, StyleSheet, Text, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { auth, db } from "../../../firebaseConfig";
 import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
 import { SkeletonBlock } from "../../components/SkeletonBlock";
+import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
@@ -70,15 +78,21 @@ function joinedTimeAgo(date: Date | null) {
 
 function DiscoverSkeleton({ colors }: { colors: ThemeColors }) {
   return (
-    <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
-      <SkeletonBlock width="55%" height={18} colors={colors} />
+    <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+      <SkeletonBlock width="100%" height={46} borderRadius={12} colors={colors} />
+      <SkeletonBlock
+        width="55%"
+        height={18}
+        colors={colors}
+        style={{ marginTop: 24 }}
+      />
       <View style={{ flexDirection: "row", marginTop: 14, gap: 12 }}>
         {[0, 1, 2].map((i) => (
           <SkeletonBlock
             key={i}
-            width={110}
+            width={112}
             height={140}
-            borderRadius={14}
+            borderRadius={16}
             colors={colors}
           />
         ))}
@@ -120,6 +134,8 @@ export default function DiscoverScreen() {
   const [users, setUsers] = useState<DiscoverUser[]>([]);
   const [topAccord, setTopAccord] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -256,6 +272,14 @@ export default function DiscoverScreen() {
       .slice(0, 8);
   }, [users, topAccord]);
 
+  // Client-side search over the collectors already loaded.
+  const searching = searchText.trim().length > 0;
+  const visibleUsers = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => u.displayName.toLowerCase().includes(q));
+  }, [users, searchText]);
+
   if (loading) {
     return <DiscoverSkeleton colors={colors} />;
   }
@@ -264,11 +288,45 @@ export default function DiscoverScreen() {
     <FlatList
       style={styles.container}
       contentContainerStyle={styles.listContent}
-      data={users}
+      data={visibleUsers}
       keyExtractor={(item) => item.id}
+      keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View>
-          {newCollectors.length > 0 && (
+          <View
+            style={[
+              styles.searchBox,
+              { borderColor: searchFocused ? colors.accent : colors.border },
+            ]}
+          >
+            <Ionicons
+              name="search"
+              size={18}
+              color={searchFocused ? colors.accent : colors.tertiaryText}
+            />
+            <TextInput
+              style={styles.searchInput}
+              value={searchText}
+              onChangeText={setSearchText}
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setSearchFocused(false)}
+              placeholder="Search collectors"
+              placeholderTextColor={colors.tertiaryText}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searching ? (
+              <Pressable onPress={() => setSearchText("")} hitSlop={8}>
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={colors.tertiaryText}
+                />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {!searching && newCollectors.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>New to Scented Roots</Text>
               <FlatList
@@ -289,7 +347,7 @@ export default function DiscoverScreen() {
             </View>
           )}
 
-          {sharedAccordCollectors.length > 0 && topAccord && (
+          {!searching && sharedAccordCollectors.length > 0 && topAccord && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>
                 Collectors who love {topAccord}
@@ -312,21 +370,27 @@ export default function DiscoverScreen() {
             </View>
           )}
 
-          {users.length > 0 && (
-            <Text style={styles.allSectionTitle}>All Collectors</Text>
+          {visibleUsers.length > 0 && (
+            <Text style={styles.allSectionTitle}>
+              {searching
+                ? `${visibleUsers.length} ${visibleUsers.length === 1 ? "collector" : "collectors"}`
+                : "All Collectors"}
+            </Text>
           )}
         </View>
       }
       ListEmptyComponent={
         <View style={styles.emptyState}>
-          <Ionicons
-            name="people-outline"
-            size={40}
-            color={colors.tertiaryText}
-          />
-          <Text style={styles.emptyTitle}>No collectors yet</Text>
+          <View style={styles.emptyIcon}>
+            <Ionicons name="people-outline" size={36} color={colors.accent} />
+          </View>
+          <Text style={styles.emptyTitle}>
+            {searching ? "No collectors found" : "No collectors yet"}
+          </Text>
           <Text style={styles.emptyText}>
-            Check back once more people have joined Scented Roots.
+            {searching
+              ? "Try a different name."
+              : "Check back once more people have joined Scented Roots."}
           </Text>
         </View>
       }
@@ -337,17 +401,7 @@ export default function DiscoverScreen() {
             onPress={() => router.push(`/user/${item.id}`)}
             scaleTo={0.98}
           >
-            {item.photoURL ? (
-              <Image source={{ uri: item.photoURL }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons
-                  name="person-outline"
-                  size={22}
-                  color={colors.tertiaryText}
-                />
-              </View>
-            )}
+            <Avatar name={item.displayName} photoURL={item.photoURL} size={48} />
             <View style={styles.rowText}>
               <Text style={styles.name} numberOfLines={1}>
                 {item.displayName}
@@ -427,17 +481,9 @@ function CollectorCard({
   const styles = createStyles(colors);
   return (
     <AnimatedPressable style={styles.card} onPress={onPress} scaleTo={0.96}>
-      {user.photoURL ? (
-        <Image source={{ uri: user.photoURL }} style={styles.cardAvatar} />
-      ) : (
-        <View style={styles.cardAvatarPlaceholder}>
-          <Ionicons
-            name="person-outline"
-            size={26}
-            color={colors.tertiaryText}
-          />
-        </View>
-      )}
+      <View style={{ marginBottom: 8 }}>
+        <Avatar name={user.displayName} photoURL={user.photoURL} size={56} />
+      </View>
       <Text style={styles.cardName} numberOfLines={1}>
         {user.displayName}
       </Text>
@@ -453,7 +499,19 @@ function CollectorCard({
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    listContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
+    listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+    searchBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      borderWidth: 1,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
+      backgroundColor: colors.inputBackground,
+      marginBottom: 22,
+    },
+    searchInput: { flex: 1, fontSize: 16, padding: 0, color: colors.text },
     section: { marginBottom: 24 },
     sectionTitle: {
       fontFamily: fonts.serifSemiBold,
@@ -472,20 +530,11 @@ function createStyles(colors: ThemeColors) {
       width: 112,
       alignItems: "center",
       backgroundColor: colors.card,
-      borderRadius: 14,
-      paddingVertical: 14,
-      paddingHorizontal: 8,
-    },
-    cardAvatar: { width: 56, height: 56, borderRadius: 28, marginBottom: 8 },
-    cardAvatarPlaceholder: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      borderRadius: 16,
       borderWidth: 1,
       borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 8,
+      paddingVertical: 14,
+      paddingHorizontal: 8,
     },
     cardName: {
       fontFamily: fonts.serifSemiBold,
@@ -506,16 +555,6 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: 12,
       borderBottomWidth: 1,
       borderBottomColor: colors.divider,
-    },
-    avatar: { width: 48, height: 48, borderRadius: 24 },
-    avatarPlaceholder: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
-      borderWidth: 1,
-      borderColor: colors.divider,
-      alignItems: "center",
-      justifyContent: "center",
     },
     rowText: { flex: 1, marginLeft: 12 },
     name: {
@@ -551,6 +590,14 @@ function createStyles(colors: ThemeColors) {
       justifyContent: "center",
       paddingHorizontal: 32,
       paddingTop: 60,
+    },
+    emptyIcon: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: colors.accentBackground,
+      alignItems: "center",
+      justifyContent: "center",
     },
     emptyTitle: {
       fontFamily: fonts.serifSemiBold,

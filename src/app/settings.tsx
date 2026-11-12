@@ -1,7 +1,8 @@
 import { signOut } from "firebase/auth";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { auth } from "../../firebaseConfig";
-import { ThemeColors } from "../constants/theme";
+import Button from "../components/ui/Button";
+import { radii } from "../constants/theme";
 import { ThemePreference, useTheme } from "../context/ThemeContext";
 
 const THEME_OPTIONS: { label: string; value: ThemePreference }[] = [
@@ -12,7 +13,6 @@ const THEME_OPTIONS: { label: string; value: ThemePreference }[] = [
 
 export default function SettingsScreen() {
   const { colors, preference, setPreference } = useTheme();
-  const styles = createStyles(colors);
 
   const handleLogout = () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -23,9 +23,8 @@ export default function SettingsScreen() {
         onPress: async () => {
           try {
             await signOut(auth);
-            // The root layout's auth listener redirects to /login
-            // automatically once the user becomes null — no navigation
-            // needed here.
+            // The root layout's auth listener redirects to /login once the
+            // user becomes null, so no navigation is needed here.
           } catch (error) {
             console.error("Error signing out:", error);
           }
@@ -35,90 +34,49 @@ export default function SettingsScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionLabel}>Appearance</Text>
-      <View style={styles.themeToggleRow}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <Text style={[styles.sectionLabel, { color: colors.text }]}>Appearance</Text>
+
+      <View style={[styles.toggleRow, { borderColor: colors.border }]}>
         {THEME_OPTIONS.map((option) => {
           const selected = preference === option.value;
           return (
-            <TouchableOpacity
+            <Pressable
               key={option.value}
               style={[
-                styles.themeOption,
-                selected && styles.themeOptionSelected,
+                styles.option,
+                { backgroundColor: selected ? colors.accent : colors.card },
               ]}
               onPress={() => setPreference(option.value)}
             >
               <Text
-                style={[
-                  styles.themeOptionText,
-                  selected && styles.themeOptionTextSelected,
-                ]}
+                style={{
+                  fontSize: 14,
+                  fontWeight: "600",
+                  color: selected ? colors.onAccent : colors.text,
+                }}
               >
                 {option.label}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutButtonText}>Log Out</Text>
-      </TouchableOpacity>
+      <Button title="Log Out" variant="danger" onPress={handleLogout} />
     </View>
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      padding: 20,
-      paddingTop: 40,
-      backgroundColor: colors.background,
-    },
-    sectionLabel: {
-      fontSize: 16,
-      fontWeight: "600",
-      marginBottom: 10,
-      color: colors.text,
-    },
-    themeToggleRow: {
-      flexDirection: "row",
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      overflow: "hidden",
-      marginBottom: 32,
-    },
-    themeOption: {
-      flex: 1,
-      paddingVertical: 10,
-      alignItems: "center",
-      backgroundColor: colors.card,
-    },
-    themeOptionSelected: {
-      backgroundColor: colors.accent,
-    },
-    themeOptionText: {
-      color: colors.text,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    themeOptionTextSelected: {
-      color: "#ffffff",
-    },
-    logoutButton: {
-      borderWidth: 1,
-      borderColor: colors.error,
-      borderRadius: 8,
-      paddingVertical: 14,
-      alignItems: "center",
-    },
-    logoutButtonText: {
-      color: colors.error,
-      fontWeight: "600",
-      fontSize: 16,
-    },
-  });
-}
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 20, paddingTop: 28, gap: 12 },
+  sectionLabel: { fontSize: 16, fontWeight: "600" },
+  toggleRow: {
+    flexDirection: "row",
+    borderWidth: 1,
+    borderRadius: radii.md,
+    overflow: "hidden",
+    marginBottom: 20,
+  },
+  option: { flex: 1, paddingVertical: 11, alignItems: "center" },
+});

@@ -1,36 +1,44 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { NewPostButton } from "../../components/NewPostButton";
 import { SettingsButton } from "../../components/SettingsButton";
 import { useTheme } from "../../context/ThemeContext";
 
+// Expo Router reads the starting tab from this export. The <Tabs> component
+// itself has no `initialRouteName` prop, which is what TypeScript was
+// complaining about.
+export const unstable_settings = {
+  initialRouteName: "feed",
+};
+
 export default function TabsLayout() {
   const { colors } = useTheme();
 
   return (
-   <Tabs
-  initialRouteName="feed"
-  screenOptions={{
-    lazy: false,
-    headerStyle: { backgroundColor: colors.card },
-    headerTintColor: colors.text,
-    headerRight: () => <SettingsButton />,
-    sceneStyle: { backgroundColor: colors.background },
-    tabBarStyle: {
-      backgroundColor: colors.card,
-      borderTopColor: colors.divider,
-    },
-    tabBarActiveTintColor: colors.accent,
-    tabBarInactiveTintColor: colors.tertiaryText,
-  }}
->
-
+    <Tabs
+      screenOptions={{
+        lazy: false,
+        headerStyle: { backgroundColor: colors.card },
+        headerTintColor: colors.text,
+        headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+        headerShadowVisible: false,
+        headerRight: () => <SettingsButton />,
+        sceneStyle: { backgroundColor: colors.background },
+        tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopColor: colors.divider,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.tertiaryText,
+      }}
+    >
       <Tabs.Screen
         name="discover"
         options={{
           title: "Discover",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="compass" size={24} color={color as string} />
           ),
         }}
       />
@@ -39,8 +47,8 @@ export default function TabsLayout() {
         options={{
           title: "Feed",
           headerLeft: () => <NewPostButton />,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="newspaper-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="home" size={24} color={color as string} />
           ),
         }}
       />
@@ -49,8 +57,8 @@ export default function TabsLayout() {
         options={{
           title: "My Collection",
           tabBarLabel: "Collection",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="library-outline" size={size} color={color} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="grid" size={24} color={color as string} />
           ),
         }}
       />

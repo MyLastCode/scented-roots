@@ -1,88 +1,112 @@
-# Scented Roots 🌿
+# Scented Roots: Figma to Expo translation (batch 1)
 
-A mobile app for cataloging, tracking, and sharing your fragrance collection — built as a personal project to learn full-stack mobile development with React Native and Firebase.
+Drop the contents of `src/` into your project's `src/` folder. Paths assume
+your existing layout: `src/app`, `src/components`, `src/constants`,
+`src/context/ThemeContext`, and `firebaseConfig.ts` at the project root.
 
-<p align="center">
-  <img src="./screenshots/lm-login.jpg" width="200" alt="Login screen" />
-  <img src="./screenshots/feed.jpg" width="200" alt="Feed screen" />
-  <img src="./screenshots/fragrance-detail.jpg" width="200" alt="Fragrance detail screen" />
-</p>
-<p align="center">
-  <img src="./screenshots/add-fragrance.jpg" width="200" alt="Add fragrance screen" />
-  <img src="./screenshots/lm_post_details.jpg" width="200" alt="Post detail with comments" />
-</p>
-
-## Features
-
-- **Multi-user accounts** — email/password auth via Firebase Authentication
-- **Personal collection** — add fragrances manually or pull them from a shared catalog, with photos, notes, and full edit/delete support
-- **Searchable catalog** — seeded from a public Kaggle fragrance dataset (~10,000 entries), searchable by name, brand, or note
-- **Social feed** — post about a fragrance with multiple photos (swipeable carousel), caption, and description
-- **Comments & follows** — comment threads on posts, follow other collectors, and view follower/following counts on profiles
-- **Discover page** — browse other users' collections
-- **Light/dark theme** — persisted user preference (system, light, or dark)
-- **Polished UI details** — animated screen transitions, staggered list fade-ins, skeleton loading states, and tactile press feedback throughout
-
-## Tech Stack
-
-- **Frontend:** React Native, Expo Router
-- **Backend:** Firebase (Authentication, Firestore, Storage)
-- **Image hosting:** Cloudinary
-- **Data tooling:** Node.js script to import, deduplicate, and prune the catalog from the source dataset
-
-## Project Structure
+## 1. Install
 
 ```
-src/
-  app/                # Expo Router screens (index, login, profile, settings, etc.)
-    detail/[id].tsx    # Fragrance detail, edit, and delete
-  constants/           # Theme tokens, fonts
-  context/             # ThemeContext (light/dark/system, persisted via AsyncStorage)
-firebaseConfig.ts       # Firebase app initialization (db/auth/storage)
-fragrance-import/
-  import-fragrances.js  # Seeds/prunes the shared catalog from the Kaggle dataset
+npx expo install expo-linear-gradient
 ```
 
-Personal collection items and shared catalog entries live in the same Firestore `fragrances` collection, distinguished by field: catalog docs carry a `status` field and no `userId`; personal items carry a `userId` and no `status`.
+(`react-native-reanimated`, `expo-image-picker` and `@react-native-async-storage/async-storage`
+are already in your project.)
 
-## Getting Started
+## 2. What's in this batch
 
-1. Clone the repo and install dependencies:
+| File | Figma frame(s) |
+| --- | --- |
+| `constants/theme.ts` | Theme Light / Theme Dark variables (merge into yours; adds `onAccent`) |
+| `components/ui/Button.tsx` | primary / outline / soft / danger pills |
+| `components/ui/TextField.tsx` | inputs (with label + error) |
+| `components/ui/Avatar.tsx` | gradient-initial avatars |
+| `components/ui/Chip.tsx` | accord / filter chips |
+| `components/ui/Skeleton.tsx` | Collection Loading |
+| `components/PostCard.tsx` | Feed post and Post Detail header (carousel, counter, dots) |
+| `components/CollectorRow.tsx` | Discover "Collectors to follow" row |
+| `components/MyPostRow.tsx` | My Posts rows |
+| `lib/cloudinary.ts` | shared upload helper (replaces the copy-pasted fetch blocks) |
+| `app/login.tsx` | Login |
+| `app/signup.tsx` | Sign Up (terms checkbox, verification email) |
+| `app/terms.tsx` | Terms & Conditions |
+| `app/verify-email.tsx` | Verify Email |
+| `app/add-from-catalog.tsx` | Add from Catalog (confirm + optional photo) |
 
-```bash
-   git clone https://github.com/MyLastCode/scented-roots.git
-   cd scented-roots
-   npm install
+## 3. Wire it up
+
+### Register the new routes in the root `_layout.tsx`
+
+```tsx
+<Stack.Screen name="signup" options={{ headerShown: false }} />
+<Stack.Screen name="terms" options={{ title: "Terms & Conditions" }} />
+<Stack.Screen name="verify-email" options={{ headerShown: false, gestureEnabled: false }} />
+<Stack.Screen name="add-from-catalog" options={{ title: "Add to Collection" }} />
 ```
 
-2. Create a `.env` file in the project root with your own Firebase and Cloudinary values:
+### Let signed-out users reach signup / terms, and gate unverified users
 
+Replace the redirect effect in `RootLayoutNav`:
+
+```tsx
+useEffect(() => {
+  if (initializing) return;
+
+  const first = segments[0] as string | undefined;
+  const publicRoutes = ["login", "signup", "terms"];
+  const inPublic = !!first && publicRoutes.includes(first);
+
+  if (!user) {
+    if (!inPublic) router.replace("/login");
+    return;
+  }
+
+  // Only require verification for accounts created after you ship this, so
+  // existing test users aren't locked out. Set the date to your release day.
+  const VERIFY_AFTER = new Date("2026-11-01").getTime();
+  const created = new Date(user.metadata.creationTime ?? 0).getTime();
+  const needsVerification = !user.emailVerified && created >= VERIFY_AFTER;
+
+  if (needsVerification) {
+    if (first !== "verify-email" && first !== "terms") router.replace("/verify-email");
+    return;
+  }
+
+  if (inPublic || first === "verify-email") router.replace("/feed");
+}, [user, initializing, segments]);
 ```
-   EXPO_PUBLIC_FIREBASE_API_KEY=your_key
-   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
-   EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
-   EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET=your_upload_preset
+
+### Route catalog search through the confirm screen
+
+In `catalog-search.tsx`, replace the body of `handleAdd` with:
+
+```tsx
+const handleAdd = (item: CatalogFragrance) => {
+  router.push({ pathname: "/add-from-catalog", params: { id: item.id } });
+};
 ```
 
-(See `.env.example` for the same template with no real values.)
+(You can then delete `addingId`, `auth`, and the `addDoc` import from that file.)
 
-3. Start the app:
+### Adjust two route names
 
-```bash
-   npx expo start
-```
+`add-from-catalog.tsx` (`COLLECTION_ROUTE`) and `verify-email.tsx` (`"/feed"`)
+use `/collection` and `/feed`. Change them if your tab routes live elsewhere
+(for example `/(tabs)/feed`).
 
-## Data Source
+## 4. Not translated yet (I need your current files)
 
-The fragrance catalog is seeded from the [Fragrantica Perfumes dataset](https://www.kaggle.com/datasets/ledecanteur/fragrantica-perfumes) on Kaggle, ranked by vote count and capped to stay within Firestore's free-tier quota.
+These screens already have working logic in your app, so I didn't want to
+overwrite them blind: Feed, Discover, collector profile (`user/[id]`), New Post
+(compose and edit), Post Detail, Collection (stat blocks, filter chips, My Posts,
+skeleton), tab bar styling, Settings, Detail. Send me those files and I'll
+restyle them in place using the components above (`PostCard`, `CollectorRow`,
+`MyPostRow`, `CollectionSkeleton`, etc.) without touching your data code.
 
-## Roadmap
+## 5. Notes
 
-- Add Collection grid, catalog search, and dark-mode screenshots
-- Moderation queue for user-submitted catalog entries
-- Restrict the feed to followed users (optional)
-- Migrate catalog search to dedicated search infrastructure (e.g. Algolia/Typesense) to support the full dataset
+- Terms text is placeholder copy. Have it reviewed before publishing.
+- `onAccent` is new: it's the text color on accent buttons (white in light mode,
+  dark in dark mode, so contrast holds with the lighter dark-mode accent).
+- Headings use `fontWeight: "700"` on your default font. If you load Inter
+  explicitly, add the `fontFamily` in the components' `StyleSheet`s.

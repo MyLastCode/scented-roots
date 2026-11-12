@@ -1,34 +1,30 @@
 import {
-  PlayfairDisplay_400Regular,
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
+  Inter_400Regular,
+  Inter_600SemiBold,
+  Inter_700Bold,
   useFonts,
-} from "@expo-google-fonts/playfair-display";
-import { Ionicons } from "@expo/vector-icons";
+} from "@expo-google-fonts/inter";
 import { Stack, useRouter, useSegments } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
+import * as NativeSplash from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { useEffect, useState } from "react";
-import { TouchableOpacity } from "react-native";
+import { View } from "react-native";
 import { auth } from "../../firebaseConfig";
-import { fetchFeed } from "../services/feedCache";
+import { SettingsButton } from "../components/SettingsButton";
+import SplashScreen from "../components/SplashScreen";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
-SplashScreen.preventAutoHideAsync();
-function SettingsButton() {
-  const router = useRouter();
-  const { colors } = useTheme();
+import { fetchFeed } from "../services/feedCache";
 
-  return (
-    <TouchableOpacity
-      onPress={() => router.push("/settings")}
-      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      style={{ paddingRight: 4 }}
-    >
-      <Ionicons name="settings-outline" size={22} color={colors.text} />
-    </TouchableOpacity>
-  );
-}
+NativeSplash.preventAutoHideAsync();
+NativeSplash.setOptions({ fade: true, duration: 250 });
+
+// Screens a signed-out user is allowed to see. Signed-in users are sent on
+// to the Feed from these.
+const PUBLIC_ROUTES = new Set(["login", "signup", "terms", "forgot-password"]);
+// Opened from the password-reset email; usable whether or not anyone is
+// signed in on this device, so the auth redirects leave it alone.
+const OPEN_ROUTES = new Set(["reset-password"]);
 
 function RootLayoutNav() {
   const [user, setUser] = useState<User | null>(null);
@@ -38,60 +34,72 @@ function RootLayoutNav() {
   const { theme, colors } = useTheme();
 
   const [fontsLoaded] = useFonts({
-    PlayfairDisplay_400Regular,
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
+    Inter_400Regular,
+    Inter_600SemiBold,
+    Inter_700Bold,
   });
 
-  const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-  setUser(firebaseUser);
-  if (firebaseUser) fetchFeed().catch(() => {});
-  if (initializing) setInitializing(false);
-});
+  useEffect(() => {
+    return onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) fetchFeed().catch(() => {});
+      setInitializing(false);
+    });
+  }, []);
 
   useEffect(() => {
-  if (initializing) return;
+    if (initializing) return;
 
-  const first: string = segments[0];
-  const onLogin = first === "login";
-  const onVerify = first === "verify-email";
-  const onLegal = first === "legal";
+    const first: string = segments[0] ?? "";
+    const onVerify = first === "verify-email";
+    if (OPEN_ROUTES.has(first)) return;
 
-  if (!user) {
-    if (!onLogin && !onLegal) router.replace("/login");
-  } else if (!user.emailVerified) {
-    if (!onVerify && !onLegal) router.replace("../verify-email");
-  } else if (onLogin || onVerify) {
-    router.replace("/feed");
-  }
-}, [user, initializing, segments]);
-
-  const isReady = !initializing && fontsLoaded;
-
-  useEffect(() => {
-    if (isReady) {
-      SplashScreen.hideAsync();
+    if (!user) {
+      if (!PUBLIC_ROUTES.has(first)) router.replace("/login");
+    } else if (!user.emailVerified) {
+      if (!onVerify && first !== "terms") router.replace("/verify-email");
+    } else if (PUBLIC_ROUTES.has(first) || onVerify) {
+      router.replace("/feed");
     }
-  }, [isReady]);
+  }, [user, initializing, segments, router]);
 
-  if (!isReady) return null;
+  // Hand off from the native splash to the in-app one as soon as fonts are
+  // ready; the in-app splash stays up until auth state is known.
+  useEffect(() => {
+    if (fontsLoaded) NativeSplash.hideAsync();
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
 
   return (
-    <>
-      <StatusBar style={theme === "dark" ? "light" : "dark"} />
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={initializing || theme === "dark" ? "light" : "dark"} />
       <Stack
-  screenOptions={{
-    headerStyle: { backgroundColor: colors.card },
-    headerTintColor: colors.text,
-    contentStyle: { backgroundColor: colors.background },
-    headerRight: () => <SettingsButton />,
-    animation: "slide_from_right",
-  }}
->
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.card },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: "700", fontSize: 18 },
+          headerShadowVisible: false,
+          headerBackButtonDisplayMode: "minimal",
+          contentStyle: { backgroundColor: colors.background },
+          animation: "slide_from_right",
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="login"
           options={{ headerShown: false, animation: "fade" }}
+        />
+        <Stack.Screen name="signup" options={{ headerShown: false }} />
+        <Stack.Screen name="terms" options={{ title: "Terms & Conditions" }} />
+        <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="forgot-password"
+          options={{ title: "Reset Password" }}
+        />
+        <Stack.Screen
+          name="reset-password"
+          options={{ title: "Account", headerBackVisible: false }}
         />
         <Stack.Screen
           name="add-fragrance"
@@ -102,18 +110,27 @@ function RootLayoutNav() {
           options={{ title: "Search Catalog" }}
         />
         <Stack.Screen
+          name="add-from-catalog"
+          options={{ title: "Add to Collection" }}
+        />
+        <Stack.Screen
           name="detail/[id]"
-          options={{ title: "Fragrance Detail" }}
+          options={{
+            title: "Fragrance Detail",
+            headerRight: () => <SettingsButton />,
+          }}
         />
         <Stack.Screen name="profile" options={{ title: "My Profile" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
         <Stack.Screen
-          name="settings"
-          options={{ title: "Settings", headerRight: () => null }}
+          name="new-post"
+          options={{ title: "New Post", animation: "slide_from_bottom" }}
         />
-        <Stack.Screen name="verify-email" options={{ headerShown: false }} />
-        <Stack.Screen name="legal" options={{ title: "Legal", headerRight: () => null }} /> 
+        <Stack.Screen name="post/[id]" options={{ title: "Post" }} />
+        <Stack.Screen name="user/[id]" options={{ title: "" }} />
       </Stack>
-    </>
+      {initializing ? <SplashScreen /> : null}
+    </View>
   );
 }
 
