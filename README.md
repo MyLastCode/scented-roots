@@ -1,112 +1,115 @@
-# Scented Roots: Figma to Expo translation (batch 1)
+# Scented Roots 🌿
 
-Drop the contents of `src/` into your project's `src/` folder. Paths assume
-your existing layout: `src/app`, `src/components`, `src/constants`,
-`src/context/ThemeContext`, and `firebaseConfig.ts` at the project root.
+A social mobile app for cataloging, tracking, and sharing your fragrance collection. I built it as a personal project to learn full-stack mobile development with React Native, TypeScript, and Firebase.
 
-## 1. Install
+<p align="center">
+  <img src="./screenshots/lm-login.jpg" width="200" alt="Login screen" />
+  <img src="./screenshots/feed.jpg" width="200" alt="Feed screen" />
+  <img src="./screenshots/fragrance-detail.jpg" width="200" alt="Fragrance detail screen" />
+</p>
+<p align="center">
+  <img src="./screenshots/add-fragrance.jpg" width="200" alt="Add fragrance screen" />
+  <img src="./screenshots/lm_post-details.jpg" width="200" alt="Post detail with comments" />
+</p>
+
+## Features
+
+- **Accounts:** email/password sign-up with a Terms checkbox, required email verification, and forgot/reset password, all through Firebase Authentication
+- **Personal collection:** add fragrances manually or from the shared catalog, with photos, notes, and full edit/delete support. A grid view filters by scent family (Woody, Fresh, Sweet)
+- **Searchable catalog:** about 10,000 entries seeded from a public Kaggle dataset, searchable by name, brand, or note. Detail pages show accords and a top/middle/base note pyramid
+- **Social feed:** post about a fragrance with multiple photos (swipeable carousel), a caption, and a description
+- **Comments and follows:** comment threads on posts, following other collectors, and follower/following counts on profiles
+- **Discover:** search for other collectors and browse their collections
+- **Light and dark themes:** follows the system setting or a saved preference
+- **Designed in Figma first:** every screen was laid out in Figma in light and dark modes, and the color tokens in `src/constants/theme.ts` match the Figma variables one to one
+- **UI polish:** animated splash screen, screen transitions, staggered list fade-ins, skeleton loading states, and press feedback throughout
+
+## Tech Stack
+
+- **App:** React Native, Expo SDK 58, Expo Router (file-based routing), TypeScript
+- **Backend:** Firebase Authentication and Cloud Firestore
+- **Images:** Cloudinary (unsigned uploads)
+- **Animation:** `react-native-reanimated`, `expo-linear-gradient`
+- **Tooling:** ESLint (`eslint-config-expo`), React Compiler, EAS Build
+
+## Project Structure
 
 ```
-npx expo install expo-linear-gradient
+src/
+  app/                     # Screens. Every file is a route (Expo Router)
+    _layout.tsx            # Root stack: auth redirects, email-verification gate, splash
+    (tabs)/                # Bottom tabs: Discover, Feed, My Collection (index.tsx)
+    detail/[id].tsx        # Fragrance detail, edit, and delete
+    post/[id].tsx          # Post detail and comments
+    user/[id].tsx          # Another collector's profile, follow button
+    login, signup, terms, verify-email, forgot-password, reset-password
+    add-fragrance, catalog-search, add-from-catalog, new-post, profile, settings
+  components/              # Shared UI (Avatar, Button, Chip, TextField, PhotoCarousel, ...)
+  constants/               # Theme tokens and fonts
+  context/ThemeContext.tsx # Light/dark/system preference, saved with AsyncStorage
+  hooks/useFollow.ts       # Follow/unfollow state for a profile
+  lib/                     # Cloudinary upload helper, scent-family grouping, password reset
+  services/                # In-memory caches for the feed and the user's collection
+firebaseConfig.ts          # Firebase initialization (reads EXPO_PUBLIC_ env vars)
 ```
 
-(`react-native-reanimated`, `expo-image-picker` and `@react-native-async-storage/async-storage`
-are already in your project.)
+### Data model
 
-## 2. What's in this batch
-
-| File | Figma frame(s) |
+| Collection | What it holds |
 | --- | --- |
-| `constants/theme.ts` | Theme Light / Theme Dark variables (merge into yours; adds `onAccent`) |
-| `components/ui/Button.tsx` | primary / outline / soft / danger pills |
-| `components/ui/TextField.tsx` | inputs (with label + error) |
-| `components/ui/Avatar.tsx` | gradient-initial avatars |
-| `components/ui/Chip.tsx` | accord / filter chips |
-| `components/ui/Skeleton.tsx` | Collection Loading |
-| `components/PostCard.tsx` | Feed post and Post Detail header (carousel, counter, dots) |
-| `components/CollectorRow.tsx` | Discover "Collectors to follow" row |
-| `components/MyPostRow.tsx` | My Posts rows |
-| `lib/cloudinary.ts` | shared upload helper (replaces the copy-pasted fetch blocks) |
-| `app/login.tsx` | Login |
-| `app/signup.tsx` | Sign Up (terms checkbox, verification email) |
-| `app/terms.tsx` | Terms & Conditions |
-| `app/verify-email.tsx` | Verify Email |
-| `app/add-from-catalog.tsx` | Add from Catalog (confirm + optional photo) |
+| `users/{uid}` | Profile (display name, bio, photo), follower/following counts, Terms acceptance time |
+| `fragrances` | **Both** the shared catalog and personal items. Catalog docs have `status: "approved"` and no `userId`. Personal items have a `userId` and can link back to a catalog entry with `catalogFragranceId` |
+| `posts` | Feed posts with photo URLs and a comment count |
+| `posts/{id}/comments` | Comments on a post |
 
-## 3. Wire it up
+## Getting Started
 
-### Register the new routes in the root `_layout.tsx`
+1. Clone the repo and install dependencies:
 
-```tsx
-<Stack.Screen name="signup" options={{ headerShown: false }} />
-<Stack.Screen name="terms" options={{ title: "Terms & Conditions" }} />
-<Stack.Screen name="verify-email" options={{ headerShown: false, gestureEnabled: false }} />
-<Stack.Screen name="add-from-catalog" options={{ title: "Add to Collection" }} />
-```
+   ```bash
+   git clone https://github.com/MyLastCode/scented-roots.git
+   cd scented-roots
+   npm install
+   ```
 
-### Let signed-out users reach signup / terms, and gate unverified users
+2. Copy `.env.example` to `.env` and fill in your own Firebase and Cloudinary values. `.env` is git-ignored.
 
-Replace the redirect effect in `RootLayoutNav`:
+   ```
+   EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   EXPO_PUBLIC_FIREBASE_APP_ID=your_app_id
+   EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+   EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET=your_upload_preset
+   ```
 
-```tsx
-useEffect(() => {
-  if (initializing) return;
+3. Start the dev server:
 
-  const first = segments[0] as string | undefined;
-  const publicRoutes = ["login", "signup", "terms"];
-  const inPublic = !!first && publicRoutes.includes(first);
+   ```bash
+   npx expo start
+   ```
 
-  if (!user) {
-    if (!inPublic) router.replace("/login");
-    return;
-  }
+4. Before committing, run the checks:
 
-  // Only require verification for accounts created after you ship this, so
-  // existing test users aren't locked out. Set the date to your release day.
-  const VERIFY_AFTER = new Date("2026-11-01").getTime();
-  const created = new Date(user.metadata.creationTime ?? 0).getTime();
-  const needsVerification = !user.emailVerified && created >= VERIFY_AFTER;
+   ```bash
+   npx tsc --noEmit
+   npx expo lint
+   ```
 
-  if (needsVerification) {
-    if (first !== "verify-email" && first !== "terms") router.replace("/verify-email");
-    return;
-  }
+The native splash screen and app icon only show up in a development or production build (`npx eas-cli@latest build --profile development`), not in Expo Go.
 
-  if (inPublic || first === "verify-email") router.replace("/feed");
-}, [user, initializing, segments]);
-```
+## Data Source
 
-### Route catalog search through the confirm screen
+The catalog was seeded from the [Fragrantica Perfumes dataset](https://www.kaggle.com/datasets/ledecanteur/fragrantica-perfumes) on Kaggle, ranked by vote count and capped to stay within Firestore's free-tier quota. A separate Node.js script, not included in this repo, did the import, deduplication, and pruning.
 
-In `catalog-search.tsx`, replace the body of `handleAdd` with:
+## Roadmap
 
-```tsx
-const handleAdd = (item: CatalogFragrance) => {
-  router.push({ pathname: "/add-from-catalog", params: { id: item.id } });
-};
-```
-
-(You can then delete `addingId`, `auth`, and the `addDoc` import from that file.)
-
-### Adjust two route names
-
-`add-from-catalog.tsx` (`COLLECTION_ROUTE`) and `verify-email.tsx` (`"/feed"`)
-use `/collection` and `/feed`. Change them if your tab routes live elsewhere
-(for example `/(tabs)/feed`).
-
-## 4. Not translated yet (I need your current files)
-
-These screens already have working logic in your app, so I didn't want to
-overwrite them blind: Feed, Discover, collector profile (`user/[id]`), New Post
-(compose and edit), Post Detail, Collection (stat blocks, filter chips, My Posts,
-skeleton), tab bar styling, Settings, Detail. Send me those files and I'll
-restyle them in place using the components above (`PostCard`, `CollectorRow`,
-`MyPostRow`, `CollectionSkeleton`, etc.) without touching your data code.
-
-## 5. Notes
-
-- Terms text is placeholder copy. Have it reviewed before publishing.
-- `onAccent` is new: it's the text color on accent buttons (white in light mode,
-  dark in dark mode, so contrast holds with the lighter dark-mode accent).
-- Headings use `fontWeight: "700"` on your default font. If you load Inter
-  explicitly, add the `fontFamily` in the components' `StyleSheet`s.
+- Refresh the screenshots for the new UI, including dark mode
+- Custom app icon
+- Two-factor authentication on sign-in
+- Real Terms of Service and Privacy Policy (the in-app Terms are placeholder text)
+- "Trending this week" row and Follow buttons on Discover
+- Moderation queue for user-submitted catalog entries
+- Move catalog search to dedicated search infrastructure (for example Algolia or Typesense). It currently filters on the client, which won't scale past the current dataset
