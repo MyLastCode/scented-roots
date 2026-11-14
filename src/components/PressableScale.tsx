@@ -32,10 +32,10 @@ export function PressableScale({
       onPress={onPress}
       disabled={disabled}
       onPressIn={() => {
-        scale.value = withSpring(scaleTo, { damping: 15, stiffness: 300 });
+        scale.set(withSpring(scaleTo, { damping: 15, stiffness: 300 }));
       }}
       onPressOut={() => {
-        scale.value = withSpring(1, { damping: 15, stiffness: 300 });
+        scale.set(withSpring(1, { damping: 15, stiffness: 300 }));
       }}
     >
       <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>

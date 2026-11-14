@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ThemeColors } from "../constants/theme";
 
 export function ProfileStats({
@@ -6,11 +6,16 @@ export function ProfileStats({
   followerCount,
   followingCount,
   colors,
+  onPressFollowers,
+  onPressFollowing,
 }: {
   fragranceCount: number;
   followerCount: number;
   followingCount: number;
   colors: ThemeColors;
+  // When set, the Followers / Following counts become tappable.
+  onPressFollowers?: () => void;
+  onPressFollowing?: () => void;
 }) {
   const styles = createStyles(colors);
 
@@ -20,14 +25,28 @@ export function ProfileStats({
         <Text style={styles.number}>{fragranceCount}</Text>
         <Text style={styles.label}>Fragrances</Text>
       </View>
-      <View style={styles.item}>
+      <Pressable
+        style={styles.item}
+        onPress={onPressFollowers}
+        disabled={!onPressFollowers}
+        hitSlop={8}
+        accessibilityRole={onPressFollowers ? "button" : undefined}
+        accessibilityLabel={`${followerCount} followers`}
+      >
         <Text style={styles.number}>{followerCount}</Text>
         <Text style={styles.label}>Followers</Text>
-      </View>
-      <View style={styles.item}>
+      </Pressable>
+      <Pressable
+        style={styles.item}
+        onPress={onPressFollowing}
+        disabled={!onPressFollowing}
+        hitSlop={8}
+        accessibilityRole={onPressFollowing ? "button" : undefined}
+        accessibilityLabel={`${followingCount} following`}
+      >
         <Text style={styles.number}>{followingCount}</Text>
         <Text style={styles.label}>Following</Text>
-      </View>
+      </Pressable>
     </View>
   );
 }

@@ -14,7 +14,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { db } from "../../../firebaseConfig";
+import { auth, db } from "../../../firebaseConfig";
 import Button from "../../components/ui/Button";
 import Chip from "../../components/ui/Chip";
 import TextField from "../../components/ui/TextField";
@@ -46,6 +46,8 @@ export default function FragranceDetailScreen() {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Other collectors' fragrances open here too, read-only.
+  const [isOwner, setIsOwner] = useState(false);
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -60,6 +62,7 @@ export default function FragranceDetailScreen() {
         setBrand(data.brand || "");
         setNotes(data.notes || "");
         setPhotoURL(data.photoURL || null);
+        setIsOwner(data.userId === auth.currentUser?.uid);
 
         if (data.catalogFragranceId) {
           try {
@@ -185,7 +188,7 @@ export default function FragranceDetailScreen() {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ paddingBottom: 40 }}
     >
-      <Pressable onPress={handlePickImage}>
+      <Pressable onPress={handlePickImage} disabled={!isOwner}>
         {photoURL ? (
           <Image source={{ uri: photoURL }} style={styles.hero} resizeMode="cover" />
         ) : (
@@ -201,9 +204,11 @@ export default function FragranceDetailScreen() {
             <ActivityIndicator size="large" color="#fff" />
           </View>
         ) : null}
-        <View style={styles.cameraBadge}>
-          <Ionicons name="camera" size={18} color={colors.onAccent} />
-        </View>
+        {isOwner ? (
+          <View style={styles.cameraBadge}>
+            <Ionicons name="camera" size={18} color={colors.onAccent} />
+          </View>
+        ) : null}
       </Pressable>
 
       <View style={styles.content}>
@@ -253,33 +258,37 @@ export default function FragranceDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.divider} />
+        {isOwner ? (
+          <>
+            <View style={styles.divider} />
 
-        <Text style={styles.sectionTitle}>Edit details</Text>
-        <TextField label="Fragrance Name" value={name} onChangeText={setName} />
-        <TextField label="Brand" value={brand} onChangeText={setBrand} />
-        <TextField
-          label="Notes"
-          value={notes}
-          onChangeText={setNotes}
-          multiline
-          placeholder="e.g. Bergamot, pepper, ambroxan"
-        />
+            <Text style={styles.sectionTitle}>Edit details</Text>
+            <TextField label="Fragrance Name" value={name} onChangeText={setName} />
+            <TextField label="Brand" value={brand} onChangeText={setBrand} />
+            <TextField
+              label="Notes"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              placeholder="e.g. Bergamot, pepper, ambroxan"
+            />
 
-        <View style={{ gap: 12, marginTop: 8 }}>
-          <Button
-            title="Save Changes"
-            onPress={handleSave}
-            loading={saving}
-            disabled={deleting || uploading || !name.trim()}
-          />
-          <Button
-            title={deleting ? "Deleting..." : "Delete Fragrance"}
-            variant="danger"
-            onPress={handleDelete}
-            disabled={deleting || saving}
-          />
-        </View>
+            <View style={{ gap: 12, marginTop: 8 }}>
+              <Button
+                title="Save Changes"
+                onPress={handleSave}
+                loading={saving}
+                disabled={deleting || uploading || !name.trim()}
+              />
+              <Button
+                title={deleting ? "Deleting..." : "Delete Fragrance"}
+                variant="danger"
+                onPress={handleDelete}
+                disabled={deleting || saving}
+              />
+            </View>
+          </>
+        ) : null}
       </View>
     </ScrollView>
   );

@@ -5,9 +5,18 @@ import { useTheme } from "../../context/ThemeContext";
 type Props = TextInputProps & {
   label?: string;
   error?: string | null;
+  // Helper text shown under the field when there's no error.
+  hint?: string;
 };
 
-export default function TextField({ label, error, style, multiline, ...rest }: Props) {
+export default function TextField({
+  label,
+  error,
+  hint,
+  style,
+  multiline,
+  ...rest
+}: Props) {
   const { colors } = useTheme();
 
   return (
@@ -32,6 +41,8 @@ export default function TextField({ label, error, style, multiline, ...rest }: P
       />
       {error ? (
         <Text style={[styles.error, { color: colors.error }]}>{error}</Text>
+      ) : hint ? (
+        <Text style={[styles.error, { color: colors.secondaryText }]}>{hint}</Text>
       ) : null}
     </View>
   );

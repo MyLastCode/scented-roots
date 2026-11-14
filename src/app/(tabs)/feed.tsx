@@ -1,7 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { auth } from "../../../firebaseConfig";
 import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
@@ -11,6 +18,9 @@ import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
+import { useContentMenu } from "../../hooks/useContentMenu";
+import { loadBlockedIds } from "../../lib/moderation";
+import { openProfile } from "../../lib/navigation";
 import { fetchFeed, getCachedPosts, Post } from "../../services/feedCache";
 
 function timeAgo(date: Date | null) {
@@ -76,13 +86,20 @@ export default function FeedScreen() {
   const [posts, setPosts] = useState<Post[]>(getCachedPosts() ?? []);
   // Only show the skeleton when there is nothing cached to display yet.
   const [loading, setLoading] = useState(!getCachedPosts());
+  const [refreshing, setRefreshing] = useState(false);
+  const myUid = auth.currentUser?.uid;
+
+  const menu = useContentMenu((blockedId) =>
+    setPosts((prev) => prev.filter((p) => p.userId !== blockedId)),
+  );
 
   const { colors } = useTheme();
   const cardStyles = styles(colors);
 
   const loadPosts = useCallback(async () => {
     try {
-      setPosts(await fetchFeed());
+      const [feed, blocked] = await Promise.all([fetchFeed(), loadBlockedIds()]);
+      setPosts(feed.filter((p) => !blocked.has(p.userId)));
     } catch (error) {
       console.error("Error loading feed:", error);
     } finally {
@@ -96,66 +113,110 @@ export default function FeedScreen() {
     }, [loadPosts]),
   );
 
+  // Pull-to-refresh: drag the list down to re-fetch.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadPosts();
+    setRefreshing(false);
+  };
+
   if (loading) {
     return <FeedSkeleton colors={colors} />;
   }
 
   return (
-    <FlatList
-      style={cardStyles.container}
-      contentContainerStyle={cardStyles.listContent}
-      data={posts}
-      keyExtractor={(item) => item.id}
-      ListEmptyComponent={
-        <View style={cardStyles.emptyState}>
-          <View style={cardStyles.emptyIcon}>
-            <Ionicons name="newspaper-outline" size={36} color={colors.accent} />
-          </View>
-          <Text style={cardStyles.emptyTitle}>No posts yet</Text>
-          <Text style={cardStyles.emptyText}>
-            Be the first to post about a fragrance using the + button above.
-          </Text>
-        </View>
-      }
-      renderItem={({ item, index }) => (
-        <FadeInItem index={index} style={cardStyles.card}>
-          <AnimatedPressable
-            style={cardStyles.postHeader}
-            onPress={() => {
-              if (item.userId === auth.currentUser?.uid) return;
-              router.push(`/user/${item.userId}`);
-            }}
-            scaleTo={0.98}
-          >
-            <Avatar name={item.displayName} photoURL={item.userPhotoURL} size={36} />
-            <View style={cardStyles.postHeaderText}>
-              <Text style={cardStyles.displayName}>{item.displayName}</Text>
-              <Text style={cardStyles.timeAgo}>
-                {timeAgo(item.createdAt?.toDate?.() ?? null)}
-              </Text>
+    <>
+      <FlatList
+        style={cardStyles.container}
+        contentContainerStyle={cardStyles.listContent}
+        data={posts}
+        keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
+          />
+        }
+        ListEmptyComponent={
+          <View style={cardStyles.emptyState}>
+            <View style={cardStyles.emptyIcon}>
+              <Ionicons name="newspaper-outline" size={36} color={colors.accent} />
             </View>
-          </AnimatedPressable>
-
-          <PhotoCarousel photos={item.photoURLs || []} colors={colors} />
-
-          <AnimatedPressable
-            style={cardStyles.actionsRow}
-            onPress={() => router.push(`/post/${item.id}`)}
-            scaleTo={0.97}
-          >
-            <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
-            <Text style={cardStyles.actionText}>
-              {item.commentCount ? String(item.commentCount) : "Add a comment"}
+            <Text style={cardStyles.emptyTitle}>No posts yet</Text>
+            <Text style={cardStyles.emptyText}>
+              Be the first to post about a fragrance using the + button at the top.
             </Text>
-          </AnimatedPressable>
+          </View>
+        }
+        renderItem={({ item, index }) => (
+          <FadeInItem index={index} style={cardStyles.card}>
+            <View style={cardStyles.postHeaderRow}>
+              <AnimatedPressable
+                style={cardStyles.postHeader}
+                onPress={() => openProfile(item.userId)}
+                scaleTo={0.98}
+              >
+                <Avatar name={item.displayName} photoURL={item.userPhotoURL} size={36} />
+                <View style={cardStyles.postHeaderText}>
+                  <Text style={cardStyles.displayName}>{item.displayName}</Text>
+                  <Text style={cardStyles.timeAgo}>
+                    {timeAgo(item.createdAt?.toDate?.() ?? null)}
+                  </Text>
+                </View>
+              </AnimatedPressable>
+              {item.userId !== myUid ? (
+                <Pressable
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="More options"
+                  onPress={() =>
+                    menu.open({
+                      target: {
+                        type: "post",
+                        postId: item.id,
+                        targetUserId: item.userId,
+                      },
+                      user: {
+                        id: item.userId,
+                        displayName: item.displayName,
+                        photoURL: item.userPhotoURL,
+                      },
+                    })
+                  }
+                >
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={20}
+                    color={colors.secondaryText}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
 
-          <Text style={cardStyles.caption}>{item.caption}</Text>
-          {item.description ? (
-            <Text style={cardStyles.description}>{item.description}</Text>
-          ) : null}
-        </FadeInItem>
-      )}
-    />
+            <PhotoCarousel photos={item.photoURLs || []} colors={colors} />
+
+            <AnimatedPressable
+              style={cardStyles.actionsRow}
+              onPress={() => router.push(`/post/${item.id}`)}
+              scaleTo={0.97}
+            >
+              <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+              <Text style={cardStyles.actionText}>
+                {item.commentCount ? String(item.commentCount) : "Add a comment"}
+              </Text>
+            </AnimatedPressable>
+
+            <Text style={cardStyles.caption}>{item.caption}</Text>
+            {item.description ? (
+              <Text style={cardStyles.description}>{item.description}</Text>
+            ) : null}
+          </FadeInItem>
+        )}
+      />
+      {menu.sheet}
+    </>
   );
 }
 
@@ -166,10 +227,16 @@ function styles(colors: ThemeColors) {
     card: {
       marginBottom: 28,
     },
+    postHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 12,
+    },
     postHeader: {
       flexDirection: "row",
       alignItems: "center",
-      marginBottom: 12,
+      flex: 1,
     },
     postHeaderText: { marginLeft: 10 },
     displayName: { fontSize: 14, fontWeight: "600", color: colors.text },

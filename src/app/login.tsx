@@ -8,6 +8,7 @@ import { auth } from "../../firebaseConfig";
 import Button from "../components/ui/Button";
 import TextField from "../components/ui/TextField";
 import { useTheme } from "../context/ThemeContext";
+import { authErrorMessage } from "../lib/authErrors";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -23,8 +24,11 @@ export default function LoginScreen() {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       // The root layout's auth listener decides where to go (Feed, or
       // /verify-email if the address isn't verified yet).
-    } catch (error: any) {
-      Alert.alert("Couldn't log in", error.message);
+    } catch (error) {
+      Alert.alert(
+        "Couldn't log in",
+        authErrorMessage(error, "Something went wrong. Please try again."),
+      );
     } finally {
       setLoading(false);
     }
@@ -85,7 +89,7 @@ export default function LoginScreen() {
 
         <Text
           style={[styles.toggle, { color: colors.accent }]}
-          onPress={() => router.push("../signup")}
+          onPress={() => router.push("/signup")}
         >
           Don&apos;t have an account? Sign up
         </Text>

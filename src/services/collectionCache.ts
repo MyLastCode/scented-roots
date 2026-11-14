@@ -22,6 +22,8 @@ export type Profile = {
   displayName: string;
   bio: string;
   photoURL: string | null;
+  followerCount: number;
+  followingCount: number;
 };
 
 export type CollectionData = {
@@ -64,6 +66,10 @@ export async function fetchCollection(): Promise<CollectionData | null> {
       displayName: data.displayName || "",
       bio: data.bio || "",
       photoURL: data.photoURL || null,
+      // `??` (nullish coalescing) only falls back when the field is missing,
+      // so a real count of 0 is kept. Older user docs may not have these yet.
+      followerCount: data.followerCount ?? 0,
+      followingCount: data.followingCount ?? 0,
     },
   };
   cachedUid = user.uid;

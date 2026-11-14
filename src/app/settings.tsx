@@ -1,3 +1,5 @@
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { signOut } from "firebase/auth";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { auth } from "../../firebaseConfig";
@@ -63,7 +65,29 @@ export default function SettingsScreen() {
         })}
       </View>
 
+      <Text style={[styles.sectionLabel, { color: colors.text }]}>Privacy</Text>
+      <View style={[styles.linkGroup, { borderColor: colors.border }]}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.linkRow,
+            { backgroundColor: pressed ? colors.divider : colors.card },
+          ]}
+          onPress={() => router.push("/blocked")}
+        >
+          <Text style={[styles.linkText, { color: colors.text }]}>
+            Blocked collectors
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color={colors.tertiaryText} />
+        </Pressable>
+      </View>
+
+      <View style={styles.spacer} />
       <Button title="Log Out" variant="danger" onPress={handleLogout} />
+      <Button
+        title="Delete Account"
+        variant="outline"
+        onPress={() => router.push("/delete-account")}
+      />
     </View>
   );
 }
@@ -79,4 +103,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   option: { flex: 1, paddingVertical: 11, alignItems: "center" },
+  linkGroup: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    overflow: "hidden",
+  },
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  linkText: { fontSize: 15 },
+  spacer: { height: 16 },
 });

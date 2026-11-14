@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   collection,
   doc,
@@ -30,6 +30,9 @@ import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
+import { useContentMenu } from "../../hooks/useContentMenu";
+import { loadBlockedIds } from "../../lib/moderation";
+import { openProfile } from "../../lib/navigation";
 
 type Post = {
   userId: string;
@@ -70,39 +73,47 @@ export default function PostDetailScreen() {
   const [commentText, setCommentText] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const router = useRouter();
+  const myUid = auth.currentUser?.uid;
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
 
-  const loadPostAndComments = async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const [postSnap, commentsSnap] = await Promise.all([
-        getDoc(doc(db, "posts", id)),
-        getDocs(
-          query(
-            collection(db, "posts", id, "comments"),
-            orderBy("createdAt", "asc"),
-          ),
-        ),
-      ]);
-
-      if (postSnap.exists()) {
-        setPost(postSnap.data() as Post);
-      }
-      setComments(
-        commentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Comment[],
-      );
-    } catch (error) {
-      console.error("Error loading post:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadPostAndComments();
+    if (!id) return;
+    // If the screen closes (or `id` changes) before Firestore answers, the
+    // cleanup below flips this flag so we don't set state on a stale screen.
+    let cancelled = false;
+
+    Promise.all([
+      getDoc(doc(db, "posts", id)),
+      loadBlockedIds(),
+      getDocs(
+        query(
+          collection(db, "posts", id, "comments"),
+          orderBy("createdAt", "asc"),
+        ),
+      ),
+    ])
+      .then(([postSnap, blocked, commentsSnap]) => {
+        if (cancelled) return;
+        if (postSnap.exists()) {
+          setPost(postSnap.data() as Post);
+        }
+        setComments(
+          (
+            commentsSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Comment[]
+          ).filter((c) => !blocked.has(c.userId)),
+        );
+      })
+      .catch((error) => console.error("Error loading post:", error))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const handleSend = async () => {
@@ -152,6 +163,80 @@ export default function PostDetailScreen() {
     }
   };
 
+  // After blocking: leave if it was the post's author, otherwise just hide
+  // that person's comments.
+  const menu = useContentMenu((blockedId) => {
+    if (blockedId === post?.userId) {
+      router.back();
+    } else {
+      setComments((prev) => prev.filter((c) => c.userId !== blockedId));
+    }
+  });
+
+  const openPostMenu = () => {
+    if (!post || !id) return;
+    menu.open({
+      target: { type: "post", postId: id, targetUserId: post.userId },
+      user: {
+        id: post.userId,
+        displayName: post.displayName,
+        photoURL: post.userPhotoURL,
+      },
+    });
+  };
+
+  const deleteComment = async (comment: Comment) => {
+    if (!id) return;
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "posts", id, "comments", comment.id));
+      batch.update(doc(db, "posts", id), { commentCount: increment(-1) });
+      await batch.commit();
+      setComments((prev) => prev.filter((c) => c.id !== comment.id));
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      Alert.alert("Couldn't delete comment", "Please try again.");
+    }
+  };
+
+  // Long-press a comment: delete it if it's yours (or on your post), and
+  // report/block if it's someone else's.
+  const openCommentMenu = (comment: Comment) => {
+    if (!id) return;
+    const canDelete = comment.userId === myUid || post?.userId === myUid;
+    const deleteOption = {
+      label: "Delete comment",
+      destructive: true,
+      onPress: () =>
+        Alert.alert("Delete comment?", "This can't be undone.", [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => deleteComment(comment),
+          },
+        ]),
+    };
+    if (comment.userId === myUid) {
+      menu.openOptions([deleteOption]);
+      return;
+    }
+    menu.open({
+      target: {
+        type: "comment",
+        postId: id,
+        commentId: comment.id,
+        targetUserId: comment.userId,
+      },
+      user: {
+        id: comment.userId,
+        displayName: comment.displayName,
+        photoURL: comment.userPhotoURL,
+      },
+      extraOptions: canDelete ? [deleteOption] : [],
+    });
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -179,19 +264,40 @@ export default function PostDetailScreen() {
           post ? (
             <View style={styles.postBlock}>
               <View style={styles.postHeader}>
-                <Avatar
-                  name={post.displayName}
-                  photoURL={post.userPhotoURL}
-                  size={36}
-                />
-                <View style={{ marginLeft: 10 }}>
-                  <Text style={styles.displayName}>{post.displayName}</Text>
-                  {post.createdAt?.toDate ? (
-                    <Text style={styles.postTime}>
-                      {timeAgo(post.createdAt.toDate())}
-                    </Text>
-                  ) : null}
-                </View>
+                <Pressable
+                  style={styles.authorRow}
+                  onPress={() => openProfile(post.userId)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${post.displayName}'s profile`}
+                >
+                  <Avatar
+                    name={post.displayName}
+                    photoURL={post.userPhotoURL}
+                    size={36}
+                  />
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.displayName}>{post.displayName}</Text>
+                    {post.createdAt?.toDate ? (
+                      <Text style={styles.postTime}>
+                        {timeAgo(post.createdAt.toDate())}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+                {post.userId !== myUid ? (
+                  <Pressable
+                    onPress={openPostMenu}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="More options"
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={20}
+                      color={colors.secondaryText}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
 
               <PhotoCarousel photos={post.photoURLs || []} colors={colors} />
@@ -223,21 +329,35 @@ export default function PostDetailScreen() {
           ) : undefined
         }
         renderItem={({ item, index }) => (
-          <FadeInItem index={index} style={styles.commentRow}>
-            <Avatar
-              name={item.displayName}
-              photoURL={item.userPhotoURL}
-              size={32}
-            />
-            <View style={styles.commentBody}>
-              <View style={styles.commentHead}>
-                <Text style={styles.commentAuthor}>{item.displayName}</Text>
-                <Text style={styles.commentTime}>
-                  {timeAgo(item.createdAt?.toDate?.() ?? null)}
-                </Text>
+          <FadeInItem index={index}>
+            <Pressable
+              style={styles.commentRow}
+              onLongPress={() => openCommentMenu(item)}
+              accessibilityHint="Long press for more options"
+            >
+              <Pressable onPress={() => openProfile(item.userId)} hitSlop={4}>
+                <Avatar
+                  name={item.displayName}
+                  photoURL={item.userPhotoURL}
+                  size={32}
+                />
+              </Pressable>
+              <View style={styles.commentBody}>
+                <View style={styles.commentHead}>
+                  <Text
+                    style={styles.commentAuthor}
+                    onPress={() => openProfile(item.userId)}
+                    suppressHighlighting
+                  >
+                    {item.displayName}
+                  </Text>
+                  <Text style={styles.commentTime}>
+                    {timeAgo(item.createdAt?.toDate?.() ?? null)}
+                  </Text>
+                </View>
+                <Text style={styles.commentText}>{item.text}</Text>
               </View>
-              <Text style={styles.commentText}>{item.text}</Text>
-            </View>
+            </Pressable>
           </FadeInItem>
         )}
       />
@@ -248,6 +368,7 @@ export default function PostDetailScreen() {
           value={commentText}
           onChangeText={setCommentText}
           placeholder="Add a comment..."
+          maxLength={1000}
           placeholderTextColor={colors.tertiaryText}
           multiline
         />
@@ -270,6 +391,7 @@ export default function PostDetailScreen() {
           )}
         </Pressable>
       </View>
+      {menu.sheet}
     </KeyboardAvoidingView>
   );
 }
@@ -289,8 +411,10 @@ function createStyles(colors: ThemeColors) {
     postHeader: {
       flexDirection: "row",
       alignItems: "center",
+      justifyContent: "space-between",
       marginBottom: 12,
     },
+    authorRow: { flexDirection: "row", alignItems: "center", flex: 1 },
     displayName: { fontSize: 14, fontWeight: "600", color: colors.text },
     postTime: { fontSize: 12, color: colors.tertiaryText, marginTop: 1 },
     caption: {

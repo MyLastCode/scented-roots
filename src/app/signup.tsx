@@ -19,6 +19,8 @@ import {
 import { auth, db } from "../../firebaseConfig";
 import Button from "../components/ui/Button";
 import TextField from "../components/ui/TextField";
+import { authErrorMessage } from "../lib/authErrors";
+import { PASSWORD_HINT, passwordProblem } from "../lib/passwordRules";
 import { useTheme } from "../context/ThemeContext";
 
 // Set by terms.tsx when the user taps "Accept & Continue".
@@ -46,8 +48,8 @@ export default function SignUpScreen() {
   const handleSignUp = async () => {
     setError(null);
     if (!email.trim()) return setError("Enter your email.");
-    if (password.length < 6)
-      return setError("Password must be at least 6 characters.");
+    const problem = passwordProblem(password);
+    if (problem) return setError(problem);
     if (password !== confirm) return setError("Passwords don't match.");
     if (!agreed) return setError("Please agree to the Terms & Conditions.");
 
@@ -75,8 +77,11 @@ export default function SignUpScreen() {
 
       await AsyncStorage.removeItem(TERMS_ACCEPTED_KEY);
       router.replace("/verify-email");
-    } catch (e: any) {
-      Alert.alert("Couldn't create account", e.message);
+    } catch (e) {
+      Alert.alert(
+        "Couldn't create account",
+        authErrorMessage(e, "Something went wrong. Please try again."),
+      );
     } finally {
       setLoading(false);
     }
@@ -109,6 +114,8 @@ export default function SignUpScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          autoComplete="new-password"
+          hint={PASSWORD_HINT}
         />
         <TextField
           placeholder="Confirm password"
@@ -137,14 +144,14 @@ export default function SignUpScreen() {
             I agree to the{" "}
             <Text
               style={{ color: colors.accent }}
-              onPress={() => router.push("../terms")}
+              onPress={() => router.push("/terms")}
             >
               Terms & Conditions
             </Text>{" "}
             and{" "}
             <Text
               style={{ color: colors.accent }}
-              onPress={() => router.push("../terms")}
+              onPress={() => router.push("/terms")}
             >
               Privacy Policy
             </Text>

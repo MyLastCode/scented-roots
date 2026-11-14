@@ -4,12 +4,11 @@ import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   updateDoc,
 } from "firebase/firestore";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,6 +26,7 @@ import TextField from "../components/ui/TextField";
 import { ThemeColors } from "../constants/theme";
 import { useTheme } from "../context/ThemeContext";
 import { uploadImage } from "../lib/cloudinary";
+import { deletePostWithComments } from "../lib/deleteAccount";
 
 // Instagram-style cap so a post stays quick to scroll through.
 const MAX_PHOTOS = 8;
@@ -45,8 +45,8 @@ export default function NewPostScreen() {
   const [deleting, setDeleting] = useState(false);
   const [loadingPost, setLoadingPost] = useState(isEditing);
   const [showSuccess, setShowSuccess] = useState(false);
-  const successOpacity = useRef(new Animated.Value(0)).current;
-  const successScale = useRef(new Animated.Value(0.7)).current;
+  const [successOpacity] = useState(() => new Animated.Value(0));
+  const [successScale] = useState(() => new Animated.Value(0.7));
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -165,7 +165,7 @@ export default function NewPostScreen() {
     if (!postId) return;
     Alert.alert(
       "Delete Post",
-      "This can't be undone. Comments on this post will also be removed from view.",
+      "This can't be undone. Its comments will be deleted too.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -174,7 +174,7 @@ export default function NewPostScreen() {
           onPress: async () => {
             setDeleting(true);
             try {
-              await deleteDoc(doc(db, "posts", postId));
+              await deletePostWithComments(postId);
               router.back();
             } catch (error) {
               console.error("Error deleting post:", error);

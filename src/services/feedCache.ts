@@ -21,6 +21,10 @@ export function getCachedPosts() {
   return cachedPosts;
 }
 
+export function clearFeedCache() {
+  cachedPosts = null;
+}
+
 export async function fetchFeed() {
   const snapshot = await getDocs(
     query(

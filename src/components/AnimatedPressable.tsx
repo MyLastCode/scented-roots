@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import {
     Animated,
     Pressable,
@@ -29,7 +29,7 @@ export function AnimatedPressable({
   children,
   ...rest
 }: Props) {
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = useState(() => new Animated.Value(1));
 
   const handlePressIn = (e: any) => {
     Animated.spring(scale, {

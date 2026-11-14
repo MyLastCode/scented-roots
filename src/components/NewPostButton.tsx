@@ -10,8 +10,9 @@ export function NewPostButton() {
   return (
     <AnimatedPressable
       onPress={() => router.push("/new-post")}
+      accessibilityRole="button"
+      accessibilityLabel="New post"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      style={{ paddingLeft: 4 }}
       scaleTo={0.85}
     >
       <Ionicons name="add-circle-outline" size={26} color={colors.text} />

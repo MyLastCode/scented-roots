@@ -22,6 +22,7 @@ import {
   PasswordReuseError,
   resetPasswordWithoutReuse,
 } from "../lib/passwordReset";
+import { PASSWORD_HINT, passwordProblem } from "../lib/passwordRules";
 
 // Custom Firebase email action handler. Firebase appends
 // ?mode=...&oobCode=... to the action URL set in the console, and that URL is
@@ -66,8 +67,8 @@ export default function ResetPasswordScreen() {
   }, [oobCode, mode]);
 
   const handleSave = async () => {
-    if (password.length < 6)
-      return setError("Password must be at least 6 characters.");
+    const problem = passwordProblem(password);
+    if (problem) return setError(problem);
     if (password !== confirm) return setError("Passwords don't match.");
     setError(null);
     setSaving(true);
@@ -183,6 +184,7 @@ export default function ResetPasswordScreen() {
         onChangeText={setPassword}
         secureTextEntry
         autoComplete="new-password"
+        hint={PASSWORD_HINT}
         autoFocus
       />
       <TextField

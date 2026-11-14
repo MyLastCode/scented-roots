@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
-import { collection, deleteDoc, doc, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { useCallback, useState } from "react";
 import {
   Alert,
   Dimensions,
   FlatList,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ import Button from "../../components/ui/Button";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
+import { deletePostWithComments } from "../../lib/deleteAccount";
 import {
   fetchCollection,
   Fragrance,
@@ -104,6 +106,7 @@ export default function CollectionScreen() {
   const [filter, setFilter] = useState<ScentFamily | "all">("all");
   // Only show the skeleton when there is nothing cached yet.
   const [loading, setLoading] = useState(!initial);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -151,7 +154,7 @@ export default function CollectionScreen() {
   const handleDeletePost = (post: MyPost) => {
     Alert.alert(
       "Delete Post",
-      "This can't be undone. Comments on this post will also be removed from view.",
+      "This can't be undone. Its comments will be deleted too.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -159,7 +162,7 @@ export default function CollectionScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteDoc(doc(db, "posts", post.id));
+              await deletePostWithComments(post.id);
               setMyPosts((prev) => prev.filter((p) => p.id !== post.id));
             } catch (error) {
               console.error("Error deleting post:", error);
@@ -171,21 +174,23 @@ export default function CollectionScreen() {
     );
   };
 
-  const countLabel =
-    fragrances.length === 1 ? "1 fragrance" : `${fragrances.length} fragrances`;
-
-  // Follower/following counts only show once collectionCache's Profile
-  // includes them (see notes). Until then we keep the plain fragrance count.
-  const social = profile as
-    | (Profile & { followerCount?: number; followingCount?: number })
-    | null;
-  const hasSocialCounts =
-    social?.followerCount !== undefined && social?.followingCount !== undefined;
-
   const visibleFragrances =
     filter === "all"
       ? fragrances
       : fragrances.filter((f) => scentFamiliesOf(f).has(filter));
+
+  // Pull-to-refresh: re-fetch the collection and posts together.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadData(), loadMyPosts()]);
+    setRefreshing(false);
+  };
+
+  const openFollowList = (type: "followers" | "following") => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    router.push({ pathname: "/follows/[id]", params: { id: uid, type } });
+  };
 
   if (loading) {
     return <CollectionSkeleton colors={colors} />;
@@ -196,6 +201,14 @@ export default function CollectionScreen() {
       style={styles.container}
       data={visibleFragrances}
       keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
       numColumns={GRID_COLUMNS}
       columnWrapperStyle={
         visibleFragrances.length > 0
@@ -215,22 +228,19 @@ export default function CollectionScreen() {
               <Text style={styles.displayName} numberOfLines={1}>
                 {profile?.displayName || "Add your name"}
               </Text>
-              {hasSocialCounts ? null : (
-                <Text style={styles.statCount}>{countLabel}</Text>
-              )}
             </View>
           </View>
 
-          {hasSocialCounts ? (
-            <View style={{ marginBottom: 16 }}>
-              <ProfileStats
-                fragranceCount={fragrances.length}
-                followerCount={social!.followerCount!}
-                followingCount={social!.followingCount!}
-                colors={colors}
-              />
-            </View>
-          ) : null}
+          <View style={{ marginBottom: 16 }}>
+            <ProfileStats
+              fragranceCount={fragrances.length}
+              followerCount={profile?.followerCount ?? 0}
+              followingCount={profile?.followingCount ?? 0}
+              colors={colors}
+              onPressFollowers={() => openFollowList("followers")}
+              onPressFollowing={() => openFollowList("following")}
+            />
+          </View>
 
           {profile?.bio ? (
             <Text style={styles.bio}>{profile.bio}</Text>
@@ -311,7 +321,7 @@ export default function CollectionScreen() {
           entering={FadeInDown.delay(Math.min(index, 12) * 50).duration(350)}
           style={styles.gridItem}
         >
-          <PressableScale onPress={() => router.push(`../detail/${item.id}`)}>
+          <PressableScale onPress={() => router.push(`/detail/${item.id}`)}>
             <FragranceImage uri={item.photoURL} style={styles.gridImage} />
             <Text style={styles.gridName} numberOfLines={1}>
               {item.name}

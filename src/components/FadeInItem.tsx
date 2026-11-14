@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Animated } from "react-native";
 
 // Wrap a FlatList renderItem's returned element in this to get a gentle
@@ -13,8 +13,8 @@ export function FadeInItem({
   children: React.ReactNode;
   style?: any;
 }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(8)).current;
+  const [opacity] = useState(() => new Animated.Value(0));
+  const [translateY] = useState(() => new Animated.Value(8));
 
   useEffect(() => {
     const delay = Math.min(index * 40, 240);

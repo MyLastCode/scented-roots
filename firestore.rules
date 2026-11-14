@@ -1,0 +1,188 @@
+rules_version = '2';
+
+// Firestore security rules for Scented Roots.
+// Deploy with: npx firebase-tools deploy --only firestore --project <your-project-id>
+//
+// The app has no server, so these rules are the only thing stopping a
+// modified client from editing other people's data. Anything not matched
+// below is denied by default.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // The write only touches these fields of an existing document.
+    function onlyChanged(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // Missing counters count as 0 (older docs don't have them).
+    function countAfter(field) {
+      return request.resource.data.get(field, 0);
+    }
+
+    function countBefore(field) {
+      return resource.data.get(field, 0);
+    }
+
+    function changedBy(field, delta) {
+      return countAfter(field) == countBefore(field) + delta;
+    }
+
+    function followPath(followerId, followingId) {
+      return /databases/$(database)/documents/follows/$(followerId + '_' + followingId);
+    }
+
+    // True when the same batch creates / deletes this follow document.
+    // Ties follower counts to a real follow, so counts can't be inflated.
+    function followCreated(followerId, followingId) {
+      return !exists(followPath(followerId, followingId))
+        && existsAfter(followPath(followerId, followingId));
+    }
+
+    function followDeleted(followerId, followingId) {
+      return exists(followPath(followerId, followingId))
+        && !existsAfter(followPath(followerId, followingId));
+    }
+
+    // ---------- users ----------
+
+    match /users/{uid} {
+      allow read: if signedIn();
+
+      // Your own profile. New profiles start with no followers.
+      allow create: if isUser(uid)
+        && countAfter('followerCount') == 0
+        && countAfter('followingCount') <= 1;
+
+      // You can edit your own profile, but not your follower count, and your
+      // following count only moves by one at a time (when you follow/unfollow).
+      allow update: if isUser(uid)
+        && countAfter('followerCount') == countBefore('followerCount')
+        && (changedBy('followingCount', 0)
+          || changedBy('followingCount', 1)
+          || changedBy('followingCount', -1));
+
+      // Someone else may only touch the counters, and only alongside the
+      // matching follow document being created or removed in the same batch.
+      allow update: if signedIn() && !isUser(uid) && (
+        (onlyChanged(['followerCount']) && (
+          (changedBy('followerCount', 1) && followCreated(request.auth.uid, uid))
+          || (changedBy('followerCount', -1) && followDeleted(request.auth.uid, uid))
+        ))
+        // When you delete your account, people who followed you lose one "following".
+        || (onlyChanged(['followingCount'])
+          && changedBy('followingCount', -1)
+          && followDeleted(uid, request.auth.uid))
+      );
+
+      allow delete: if isUser(uid);
+
+      // Private list of people this user has blocked.
+      match /blocks/{blockedId} {
+        allow read, write: if isUser(uid);
+      }
+    }
+
+    // ---------- follows ----------
+    // Doc ID is "<followerId>_<followingId>".
+
+    match /follows/{followId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followingId is string
+        && request.resource.data.followingId != request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.followingId;
+
+      // Either side can end a follow (unfollowing, or deleting your account).
+      allow delete: if signedIn()
+        && (resource.data.followerId == request.auth.uid
+          || resource.data.followingId == request.auth.uid);
+    }
+
+    // ---------- fragrances ----------
+    // Holds both the shared catalog (status field, no userId) and personal
+    // items (userId). The catalog is read-only from the app; it's seeded with
+    // the Admin SDK, which bypasses these rules.
+
+    match /fragrances/{fragranceId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && !('status' in request.resource.data);
+
+      allow update: if signedIn()
+        && resource.data.get('userId', null) == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && !('status' in request.resource.data);
+
+      allow delete: if signedIn()
+        && resource.data.get('userId', null) == request.auth.uid;
+    }
+
+    // ---------- posts and comments ----------
+
+    match /posts/{postId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && countAfter('commentCount') == 0;
+
+      // The author can edit their post (but not fake its comment count).
+      // Anyone can move commentCount by one, which happens when they add or
+      // delete a comment.
+      allow update: if signedIn() && (
+        (resource.data.userId == request.auth.uid
+          && request.resource.data.userId == request.auth.uid
+          && countAfter('commentCount') == countBefore('commentCount'))
+        || (onlyChanged(['commentCount'])
+          && (changedBy('commentCount', 1) || changedBy('commentCount', -1)))
+      );
+
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+
+        allow create: if signedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000;
+
+        // The commenter, or the owner of the post, can remove a comment.
+        allow delete: if signedIn()
+          && (resource.data.userId == request.auth.uid
+            || get(/databases/$(database)/documents/posts/$(postId)).data.userId == request.auth.uid);
+      }
+    }
+
+    // Lets account deletion find all of a user's comments across posts.
+    match /{path=**}/comments/{commentId} {
+      allow read: if signedIn();
+    }
+
+    // ---------- reports ----------
+    // Write-only from the app. Review them in the Firebase console.
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 100
+        && request.resource.data.targetType in ['post', 'comment', 'user'];
+    }
+  }
+}

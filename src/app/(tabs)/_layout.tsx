@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { View } from "react-native";
 import { NewPostButton } from "../../components/NewPostButton";
 import { SettingsButton } from "../../components/SettingsButton";
 import { useTheme } from "../../context/ThemeContext";
@@ -46,7 +47,14 @@ export default function TabsLayout() {
         name="feed"
         options={{
           title: "Feed",
-          headerLeft: () => <NewPostButton />,
+          // New Post sits on the right with Settings; the left side of a
+          // header is where people expect a back button.
+          headerRight: () => (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 18 }}>
+              <NewPostButton />
+              <SettingsButton />
+            </View>
+          ),
           tabBarIcon: ({ color }) => (
             <Feather name="home" size={24} color={color as string} />
           ),

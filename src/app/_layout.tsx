@@ -14,7 +14,9 @@ import { auth } from "../../firebaseConfig";
 import { SettingsButton } from "../components/SettingsButton";
 import SplashScreen from "../components/SplashScreen";
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
-import { fetchFeed } from "../services/feedCache";
+import { clearBlockedCache } from "../lib/moderation";
+import { clearCollectionCache } from "../services/collectionCache";
+import { clearFeedCache, fetchFeed } from "../services/feedCache";
 
 NativeSplash.preventAutoHideAsync();
 NativeSplash.setOptions({ fade: true, duration: 250 });
@@ -42,7 +44,15 @@ function RootLayoutNav() {
   useEffect(() => {
     return onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      if (firebaseUser) fetchFeed().catch(() => {});
+      if (firebaseUser) {
+        fetchFeed().catch(() => {});
+      } else {
+        // Signed out or account deleted: drop everything cached in memory
+        // so the next person to sign in on this device never sees it.
+        clearFeedCache();
+        clearCollectionCache();
+        clearBlockedCache();
+      }
       setInitializing(false);
     });
   }, []);
@@ -128,6 +138,9 @@ function RootLayoutNav() {
         />
         <Stack.Screen name="post/[id]" options={{ title: "Post" }} />
         <Stack.Screen name="user/[id]" options={{ title: "" }} />
+        <Stack.Screen name="follows/[id]" options={{ title: "" }} />
+        <Stack.Screen name="blocked" options={{ title: "Blocked Collectors" }} />
+        <Stack.Screen name="delete-account" options={{ title: "Delete Account" }} />
       </Stack>
       {initializing ? <SplashScreen /> : null}
     </View>
