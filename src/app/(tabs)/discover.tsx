@@ -5,19 +5,32 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
+  RefreshControl,
+  StyleProp,
   StyleSheet,
   Text,
   TextInput,
   View,
+  ViewStyle,
 } from "react-native";
 import { auth, db } from "../../../firebaseConfig";
 import { AnimatedPressable } from "../../components/AnimatedPressable";
 import { FadeInItem } from "../../components/FadeInItem";
+import FragranceImage from "../../components/FragranceImage";
 import { SkeletonBlock } from "../../components/SkeletonBlock";
 import Avatar from "../../components/ui/Avatar";
 import { fonts } from "../../constants/fonts";
 import { ThemeColors } from "../../constants/theme";
 import { useTheme } from "../../context/ThemeContext";
+import { loadBlockedIds } from "../../lib/moderation";
+import {
+  buildTasteProfile,
+  capitalize,
+  RecommendedFragrance,
+  recommendFragrances,
+  scentWords,
+  scoreAgainst,
+} from "../../lib/recommendations";
 
 type DiscoverUser = {
   id: string;
@@ -28,7 +41,12 @@ type DiscoverUser = {
   createdAt: { toDate: () => Date } | null;
   topNotes: string[];
   currentlyWearing: string | null;
+  scentWords: Set<string>;
 };
+
+type SuggestedCollector = DiscoverUser & { reason: string | null };
+
+const SUGGESTION_COUNT = 3;
 
 const PAGE_SIZE = 50;
 const FRAGRANCE_CHUNK_SIZE = 10; // Firestore "in" query limit we're targeting
@@ -132,10 +150,18 @@ function DiscoverSkeleton({ colors }: { colors: ThemeColors }) {
 export default function DiscoverScreen() {
   const router = useRouter();
   const [users, setUsers] = useState<DiscoverUser[]>([]);
-  const [topAccord, setTopAccord] = useState<string | null>(null);
+  const [suggestedCollectors, setSuggestedCollectors] = useState<
+    SuggestedCollector[]
+  >([]);
+  const [suggestedFragrances, setSuggestedFragrances] = useState<
+    RecommendedFragrance[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  // Pull-to-refresh bumps reloadKey, which re-runs the load effect below.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -149,7 +175,10 @@ export default function DiscoverScreen() {
         const usersSnap = await getDocs(
           query(collection(db, "users"), limit(PAGE_SIZE)),
         );
-        const userDocs = usersSnap.docs.filter((d) => d.id !== currentUid);
+        const blocked = await loadBlockedIds();
+        const userDocs = usersSnap.docs.filter(
+          (d) => d.id !== currentUid && !blocked.has(d.id),
+        );
         const userIds = userDocs.map((d) => d.id);
 
         const baseUsers: DiscoverUser[] = userDocs.map((d) => {
@@ -163,12 +192,14 @@ export default function DiscoverScreen() {
             createdAt: data.createdAt ?? null,
             topNotes: [],
             currentlyWearing: null,
+            scentWords: new Set<string>(),
           };
         });
 
         const idChunks = chunkArray(userIds, FRAGRANCE_CHUNK_SIZE);
 
-        const [fragranceSnaps, postSnaps, ownFragranceSnap] = await Promise.all(
+        const [fragranceSnaps, postSnaps, ownFragranceSnap, followSnap] =
+          await Promise.all(
           [
             Promise.all(
               idChunks.map((chunk) =>
@@ -193,15 +224,29 @@ export default function DiscoverScreen() {
                 where("userId", "==", currentUid),
               ),
             ),
+            // Only used to hide already-followed people from suggestions, so
+            // a failure here (e.g. security rules) shouldn't break Discover.
+            getDocs(
+              query(
+                collection(db, "follows"),
+                where("followerId", "==", currentUid),
+              ),
+            ).catch(() => null),
           ],
         );
 
-        // Group each discover user's fragrance notes together.
+        // Group each discover user's fragrance notes (and every scent word,
+        // for matching against the current user's taste) together.
         const notesByUser = new Map<string, string[]>();
+        const wordsByUser = new Map<string, Set<string>>();
         fragranceSnaps.forEach((snap) => {
           snap.docs.forEach((docSnap) => {
             const data = docSnap.data();
-            if (!data.userId || !data.notes) return;
+            if (!data.userId) return;
+            const words = wordsByUser.get(data.userId) ?? new Set<string>();
+            scentWords(data).forEach((w) => words.add(w));
+            wordsByUser.set(data.userId, words);
+            if (!data.notes) return;
             if (!notesByUser.has(data.userId)) {
               notesByUser.set(data.userId, []);
             }
@@ -231,27 +276,49 @@ export default function DiscoverScreen() {
           });
         });
 
-        const ownNotes = ownFragranceSnap.docs
-          .map((d) => d.data().notes)
-          .filter(Boolean) as string[];
-        const ownTopAccord = computeTopNotes(ownNotes, 1)[0] || null;
-
         const enrichedUsers: DiscoverUser[] = baseUsers.map((u) => ({
           ...u,
           topNotes: computeTopNotes(notesByUser.get(u.id) || [], 2),
           currentlyWearing: latestPostByUser.get(u.id)?.caption || null,
+          scentWords: wordsByUser.get(u.id) ?? new Set<string>(),
         }));
 
+        // Collectors for you: people not already followed, ranked by how much
+        // of the user's taste their collection shares. Popular collectors fill
+        // any gaps (e.g. when the user's own collection is still empty).
+        const ownFragrances = ownFragranceSnap.docs.map((d) => d.data());
+        const profile = buildTasteProfile(ownFragrances);
+        const followed = new Set(
+          (followSnap?.docs ?? []).map((d) => d.data().followingId as string),
+        );
+        const ranked = enrichedUsers
+          .filter((u) => !followed.has(u.id))
+          .map((u) => {
+            const { score, reason } = scoreAgainst(profile, u.scentWords);
+            return { ...u, score, reason: reason ? capitalize(reason) : null };
+          })
+          .sort((a, b) => b.score - a.score || b.followerCount - a.followerCount)
+          .slice(0, SUGGESTION_COUNT);
+
         setUsers(enrichedUsers);
-        setTopAccord(ownTopAccord);
+        setSuggestedCollectors(ranked);
+
+        // Fragrance recommendations are a separate query; if it fails the rest
+        // of Discover should still show.
+        recommendFragrances(profile, ownFragrances, SUGGESTION_COUNT)
+          .then(setSuggestedFragrances)
+          .catch((error) =>
+            console.error("Error loading fragrance suggestions:", error),
+          );
       } catch (error) {
         console.error("Error loading discover list:", error);
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
     loadDiscoverData();
-  }, []);
+  }, [reloadKey]);
 
   const newCollectors = useMemo(() => {
     return users
@@ -263,14 +330,6 @@ export default function DiscoverScreen() {
       )
       .slice(0, 8);
   }, [users]);
-
-  const sharedAccordCollectors = useMemo(() => {
-    if (!topAccord) return [];
-    const key = topAccord.toLowerCase();
-    return users
-      .filter((u) => u.topNotes.some((n) => n.toLowerCase() === key))
-      .slice(0, 8);
-  }, [users, topAccord]);
 
   // Client-side search over the collectors already loaded.
   const searching = searchText.trim().length > 0;
@@ -290,6 +349,17 @@ export default function DiscoverScreen() {
       contentContainerStyle={styles.listContent}
       data={visibleUsers}
       keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            setRefreshing(true);
+            setReloadKey((k) => k + 1);
+          }}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+        />
+      }
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View>
@@ -347,26 +417,54 @@ export default function DiscoverScreen() {
             </View>
           )}
 
-          {!searching && sharedAccordCollectors.length > 0 && topAccord && (
+          {!searching && suggestedFragrances.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Collectors who love {topAccord}
-              </Text>
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={sharedAccordCollectors}
-                keyExtractor={(item) => `accord-${item.id}`}
-                contentContainerStyle={styles.cardRow}
-                renderItem={({ item }) => (
+              <Text style={styles.sectionTitle}>Fragrances for you</Text>
+              <View style={styles.tileRow}>
+                {suggestedFragrances.map((f) => (
+                  <AnimatedPressable
+                    key={f.id}
+                    style={styles.tile}
+                    scaleTo={0.96}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/add-from-catalog",
+                        params: { id: f.id },
+                      })
+                    }
+                  >
+                    <FragranceImage uri={f.photoURL} style={styles.tileImage} />
+                    <Text style={styles.tileName} numberOfLines={1}>
+                      {f.name}
+                    </Text>
+                    <Text style={styles.tileReason} numberOfLines={1}>
+                      {f.reason ? `You like ${f.reason}` : f.brand}
+                    </Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {!searching && suggestedCollectors.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Collectors for you</Text>
+              <View style={styles.tileRow}>
+                {suggestedCollectors.map((item) => (
                   <CollectorCard
+                    key={`suggested-${item.id}`}
                     user={item}
-                    subtitle={item.topNotes.join(" · ")}
+                    subtitle={
+                      item.reason
+                        ? `Also loves ${item.reason}`
+                        : item.topNotes.join(" · ")
+                    }
                     colors={colors}
+                    style={styles.tile}
                     onPress={() => router.push(`/user/${item.id}`)}
                   />
-                )}
-              />
+                ))}
+              </View>
             </View>
           )}
 
@@ -471,16 +569,22 @@ function CollectorCard({
   user,
   subtitle,
   colors,
+  style,
   onPress,
 }: {
   user: DiscoverUser;
   subtitle: string;
   colors: ThemeColors;
+  style?: StyleProp<ViewStyle>;
   onPress: () => void;
 }) {
   const styles = createStyles(colors);
   return (
-    <AnimatedPressable style={styles.card} onPress={onPress} scaleTo={0.96}>
+    <AnimatedPressable
+      style={[styles.card, style]}
+      onPress={onPress}
+      scaleTo={0.96}
+    >
       <View style={{ marginBottom: 8 }}>
         <Avatar name={user.displayName} photoURL={user.photoURL} size={56} />
       </View>
@@ -526,6 +630,29 @@ function createStyles(colors: ThemeColors) {
       marginBottom: 4,
     },
     cardRow: { gap: 12, paddingRight: 8 },
+    // Three equal columns, matching the Figma Discover tile row.
+    tileRow: { flexDirection: "row", gap: 10 },
+    tile: { flex: 1, width: undefined, minWidth: 0 },
+    tileImage: {
+      width: "100%",
+      aspectRatio: 1,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    tileName: {
+      fontSize: 12,
+      fontWeight: "600",
+      color: colors.text,
+      textAlign: "center",
+      marginTop: 6,
+    },
+    tileReason: {
+      fontSize: 11,
+      color: colors.secondaryText,
+      textAlign: "center",
+      marginTop: 2,
+    },
     card: {
       width: 112,
       alignItems: "center",

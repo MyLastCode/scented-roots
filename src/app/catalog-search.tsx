@@ -95,24 +95,10 @@ export default function CatalogSearchScreen() {
       .slice(0, MAX_RESULTS_SHOWN);
   }, [searchText, catalog]);
 
-  const formatNotes = (item: CatalogFragrance) => {
-    const all = [...item.notesTop, ...item.notesMiddle, ...item.notesBase];
-    if (all.length === 0) return "";
-    return all.join(", ");
-  };
-
   // Rather than saving immediately, hand off to a confirm screen so the user
   // can attach their own photo(s) before it lands in their collection.
   const handleSelect = (item: CatalogFragrance) => {
-    router.push({
-      pathname: "../add-from-catalog",
-      params: {
-        catalogId: item.id,
-        name: item.name,
-        brand: item.brand,
-        notes: formatNotes(item),
-      },
-    });
+    router.push({ pathname: "/add-from-catalog", params: { id: item.id } });
   };
 
   if (loading) {
